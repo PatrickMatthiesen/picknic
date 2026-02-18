@@ -15,7 +15,8 @@ var githubModelsModel = builder.AddParameter("github-models-model");
 var githubModelsEndpoint = builder.AddParameter("github-models-endpoint");
 const int webPort = 57334;
 
-var postgres = builder.AddPostgres("postgres");
+var postgres = builder.AddPostgres("postgres")
+    .WithPgAdmin();
 var picknicdb = postgres.AddDatabase("picknicdb");
 
 var web = builder.AddBunApp("web", "../web", "dev")

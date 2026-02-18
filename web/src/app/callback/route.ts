@@ -1,8 +1,9 @@
 import { handleAuth } from "@workos-inc/authkit-nextjs";
+import { NextRequest, NextResponse } from "next/server";
 import { MembershipRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-export const GET = handleAuth({
+const authHandler = handleAuth({
   returnPathname: "/",
   onSuccess: async ({ user, organizationId }) => {
     const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
@@ -58,3 +59,11 @@ export const GET = handleAuth({
     });
   },
 });
+
+export async function GET(request: NextRequest) {
+  if (!request.nextUrl.searchParams.get("code")) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  return authHandler(request);
+}
