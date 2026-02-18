@@ -1,3 +1,5 @@
+import OpenAI from "openai";
+
 export type ParsedRecipeDraft = {
   title: string;
   description: string;
@@ -9,14 +11,6 @@ export type ParsedRecipeDraft = {
     unit: string | null;
   }>;
   steps: string[];
-};
-
-type GitHubModelsResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
 };
 
 function extractJson(text: string): unknown {
@@ -68,46 +62,45 @@ function normalizeDraft(value: unknown): ParsedRecipeDraft {
   };
 }
 
+function resolveBaseUrl(endpoint: string): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  const chatCompletionsSuffix = "/chat/completions";
+  return trimmed.endsWith(chatCompletionsSuffix)
+    ? trimmed.slice(0, trimmed.length - chatCompletionsSuffix.length)
+    : trimmed;
+}
+
 export async function parseRecipeWithGitHubModels(rawText: string): Promise<ParsedRecipeDraft> {
   const apiKey = process.env.GITHUB_MODELS_API_KEY ?? process.env.GITHUB_TOKEN;
   if (!apiKey) {
     throw new Error("GITHUB_MODELS_API_KEY (or GITHUB_TOKEN) is required to use recipe parsing.");
   }
 
-  const endpoint = process.env.GITHUB_MODELS_ENDPOINT ?? "https://models.inference.ai.azure.com/chat/completions";
+  const endpoint = process.env.GITHUB_MODELS_ENDPOINT ?? "https://models.github.ai/inference";
   const model = process.env.GITHUB_MODELS_MODEL ?? "openai/gpt-4.1-mini";
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 1,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You extract recipes into strict JSON with keys: title (string), description (string), servings (number), tags (string[]), ingredients ({name, quantity, unit}[]), steps (string[]). Return only JSON.",
-        },
-        {
-          role: "user",
-          content: rawText,
-        },
-      ],
-    }),
+  const client = new OpenAI({
+    apiKey,
+    baseURL: resolveBaseUrl(endpoint),
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`GitHub Models request failed (${response.status}): ${body}`);
-  }
+  const completion = await client.chat.completions.create({
+    model,
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "You extract recipes into strict JSON with keys: title (string), description (string), servings (number), tags (string[]), ingredients ({name, quantity, unit}[]), steps (string[]). Return only JSON.",
+      },
+      {
+        role: "user",
+        content: rawText,
+      },
+    ],
+  });
 
-  const payload = (await response.json()) as GitHubModelsResponse;
-  const content = payload.choices?.[0]?.message?.content ?? "";
+  const content = completion.choices[0]?.message?.content ?? "";
   const parsed = extractJson(content);
   return normalizeDraft(parsed);
 }
