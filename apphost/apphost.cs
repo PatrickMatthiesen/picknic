@@ -19,7 +19,7 @@ var postgres = builder.AddPostgres("postgres")
     .WithPgAdmin();
 var picknicdb = postgres.AddDatabase("picknicdb");
 
-var web = builder.AddBunApp("web", "../web", "dev")
+var web = builder.AddBunApp("web", "../web", "dev:aspire")
     .WithHttpEndpoint(port: webPort, targetPort: webPort, isProxied: false, env: "PORT")
     .WithReference(picknicdb)
     .WithEnvironment("WORKOS_CLIENT_ID", workosClientId)

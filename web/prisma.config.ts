@@ -3,12 +3,30 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+function getAspireConnectionStringFromParts() {
+  const host = process.env.PICKNICDB_HOST;
+  const port = process.env.PICKNICDB_PORT;
+  const username = process.env.PICKNICDB_USERNAME;
+  const password = process.env.PICKNICDB_PASSWORD;
+  const database = process.env.PICKNICDB_DATABASENAME;
+
+  if (!host || !port || !username || !password || !database) {
+    return undefined;
+  }
+
+  return `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"] ?? process.env["ConnectionStrings__picknicdb"],
+    url:
+      process.env["PICKNICDB_URI"] ??
+      getAspireConnectionStringFromParts() ??
+      process.env["ConnectionStrings__picknicdb"] ??
+      process.env["DATABASE_URL"],
   },
 });

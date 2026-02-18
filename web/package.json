@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:aspire": "prisma migrate deploy && next dev",
     "build": "next build",
     "start": "next start",
     "test": "bun test",

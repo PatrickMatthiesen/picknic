@@ -85,7 +85,7 @@ export async function parseRecipeWithGitHubModels(rawText: string): Promise<Pars
     },
     body: JSON.stringify({
       model,
-      temperature: 0.1,
+      temperature: 1,
       response_format: { type: "json_object" },
       messages: [
         {

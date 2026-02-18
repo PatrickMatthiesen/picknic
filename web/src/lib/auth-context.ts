@@ -8,16 +8,70 @@ export type AppAuthContext = {
   organizationId?: string;
 };
 
-export async function requireAppAuthContext(): Promise<AppAuthContext> {
-  const { user, organizationId } = await withAuth({ ensureSignedIn: true });
-  const dbUser = await prisma.user.findUnique({
+type SessionUser = {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export async function ensureLinkedProfile(
+  user: SessionUser,
+  organizationId?: string,
+): Promise<{ id: string }> {
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
+  const dbUser = await prisma.user.upsert({
     where: { workosUserId: user.id },
+    update: {
+      email: user.email,
+      displayName,
+    },
+    create: {
+      workosUserId: user.id,
+      email: user.email,
+      displayName,
+    },
     select: { id: true },
   });
 
-  if (!dbUser) {
-    throw new Error("Authenticated user does not have a linked profile.");
+  if (!organizationId) {
+    return dbUser;
   }
+
+  const household = await prisma.household.upsert({
+    where: { workosOrganizationId: organizationId },
+    update: {},
+    create: {
+      name: "My Household",
+      workosOrganizationId: organizationId,
+      ownerId: dbUser.id,
+    },
+    select: { id: true, ownerId: true },
+  });
+
+  await prisma.householdMember.upsert({
+    where: {
+      householdId_userId: {
+        householdId: household.id,
+        userId: dbUser.id,
+      },
+    },
+    update: {
+      role: household.ownerId === dbUser.id ? MembershipRole.OWNER : MembershipRole.MEMBER,
+    },
+    create: {
+      householdId: household.id,
+      userId: dbUser.id,
+      role: household.ownerId === dbUser.id ? MembershipRole.OWNER : MembershipRole.MEMBER,
+    },
+  });
+
+  return dbUser;
+}
+
+export async function requireAppAuthContext(): Promise<AppAuthContext> {
+  const { user, organizationId } = await withAuth({ ensureSignedIn: true });
+  const dbUser = await ensureLinkedProfile(user, organizationId);
 
   return {
     workosUserId: user.id,
