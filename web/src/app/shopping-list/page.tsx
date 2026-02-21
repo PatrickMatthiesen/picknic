@@ -5,6 +5,7 @@ import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-cont
 import { getWeekStartUtc } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { generateShoppingListForWeek, getShoppingListForWeek } from "@/lib/shopping-list-service";
+import { AppNav } from "@/app/_components/app-nav";
 
 export default async function ShoppingListPage() {
   const { userId, organizationId } = await requireAppAuthContext();
@@ -12,15 +13,17 @@ export default async function ShoppingListPage() {
 
   if (!householdId) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 px-6 py-12">
-        <h1 className="text-3xl font-semibold tracking-tight">Shopping list</h1>
-        <p className="text-zinc-600">
-          Your account is authenticated, but no household was found yet. Complete organization setup in WorkOS and sign
-          in again.
-        </p>
-        <Link className="text-sm font-medium underline" href="/">
-          Back home
-        </Link>
+      <main className="app-theme-page px-6 py-12">
+        <section className="app-theme-card mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 rounded-3xl p-8">
+          <h1 className="text-3xl font-semibold tracking-tight">Shopping list</h1>
+          <p className="app-theme-muted">
+            Your account is authenticated, but no household was found yet. Complete organization setup in WorkOS and sign
+            in again.
+          </p>
+          <Link className="app-theme-link w-fit rounded-full px-4 py-2 text-sm font-medium" href="/">
+            Back home
+          </Link>
+        </section>
       </main>
     );
   }
@@ -145,83 +148,77 @@ export default async function ShoppingListPage() {
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Shopping list</h1>
-        <p className="text-zinc-600">
-          Week of {weekStart.toISOString().slice(0, 10)} to {weekEnd.toISOString().slice(0, 10)}.
-        </p>
-        <div className="flex gap-4 text-sm">
-          <Link className="underline" href="/planner">
-            Meal planner
-          </Link>
-          <Link className="underline" href="/recipes">
-            Recipes
-          </Link>
-          <Link className="underline" href="/pantry">
-            Pantry
-          </Link>
-        </div>
-      </header>
-
-      <section className="rounded-xl border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Generate list from meal plan</h2>
-        <p className="mt-2 text-sm text-zinc-600">
-          Regenerate to refresh auto items from planned meals; manual items are preserved.
-        </p>
-        <form action={regenerateShoppingList} className="mt-4">
-          <button className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white" type="submit">
-            Generate or refresh
-          </button>
-        </form>
-      </section>
-
-      <section className="rounded-xl border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Add manual item</h2>
-        <form action={addManualItem} className="mt-4 grid gap-3 sm:grid-cols-3">
-          <input className="rounded-md border border-zinc-300 px-3 py-2 sm:col-span-2" name="ingredientName" placeholder="Item name" />
-          <input className="rounded-md border border-zinc-300 px-3 py-2" min={0} name="quantity" placeholder="Qty" step="0.01" type="number" />
-          <input className="rounded-md border border-zinc-300 px-3 py-2 sm:col-span-2" name="unit" placeholder="Unit (optional)" />
-          <button className="w-fit rounded-full border border-zinc-300 px-5 py-2 text-sm font-medium" type="submit">
-            Add item
-          </button>
-        </form>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Items</h2>
-        {!shoppingList || shoppingList.items.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-zinc-600">
-            No shopping items yet. Generate from your current week meal plan.
+    <main className="app-theme-page relative overflow-hidden px-6 py-12">
+      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
+      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
+      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6">
+        <header className="app-theme-card space-y-3 rounded-3xl p-7">
+          <h1 className="text-3xl font-semibold tracking-tight">Shopping list</h1>
+          <p className="app-theme-muted">
+            Week of {weekStart.toISOString().slice(0, 10)} to {weekEnd.toISOString().slice(0, 10)}.
           </p>
-        ) : (
-          shoppingList.items.map((item) => {
-            const nextStatus =
-              item.status === ShoppingItemStatus.BOUGHT ? ShoppingItemStatus.PENDING : ShoppingItemStatus.BOUGHT;
+          <AppNav currentPath="/shopping-list" />
+        </header>
 
-            return (
-              <article className="flex items-center justify-between rounded-xl border border-zinc-200 p-4" key={item.id}>
-                <div>
-                  <p className={`text-sm font-medium ${item.status === ShoppingItemStatus.BOUGHT ? "line-through text-zinc-400" : ""}`}>
-                    {item.quantity ? `${item.quantity} ` : ""}
-                    {item.unit ? `${item.unit} ` : ""}
-                    {item.ingredientName}
-                  </p>
-                  <p className="text-xs uppercase tracking-wide text-zinc-500">{item.source}</p>
-                </div>
+        <section className="app-theme-card rounded-3xl p-5">
+          <h2 className="text-lg font-semibold">Generate list from meal plan</h2>
+          <p className="app-theme-muted mt-2 text-sm">
+            Regenerate to refresh auto items from planned meals; manual items are preserved.
+          </p>
+          <form action={regenerateShoppingList} className="mt-4">
+            <button className="app-theme-primary-button rounded-2xl px-5 py-2 text-sm font-medium" type="submit">
+              Generate or refresh
+            </button>
+          </form>
+        </section>
 
-                <form action={toggleItemStatus}>
-                  <input name="itemId" type="hidden" value={item.id} />
-                  <input name="nextStatus" type="hidden" value={nextStatus} />
-                  <button className="text-sm font-medium underline" type="submit">
-                    {item.status === ShoppingItemStatus.BOUGHT ? "Mark pending" : "Mark bought"}
-                  </button>
-                </form>
-              </article>
-            );
-          })
-        )}
-      </section>
+        <section className="app-theme-card rounded-3xl p-5">
+          <h2 className="text-lg font-semibold">Add manual item</h2>
+          <form action={addManualItem} className="mt-4 grid gap-3 sm:grid-cols-3">
+            <input className="app-theme-input rounded-xl px-3 py-2 sm:col-span-2" name="ingredientName" placeholder="Item name" />
+            <input className="app-theme-input rounded-xl px-3 py-2" min={0} name="quantity" placeholder="Qty" step="0.01" type="number" />
+            <input className="app-theme-input rounded-xl px-3 py-2 sm:col-span-2" name="unit" placeholder="Unit (optional)" />
+            <button className="app-theme-secondary-button w-fit rounded-2xl px-5 py-2 text-sm font-medium" type="submit">
+              Add item
+            </button>
+          </form>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Items</h2>
+          {!shoppingList || shoppingList.items.length === 0 ? (
+            <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">
+              No shopping items yet. Generate from your current week meal plan.
+            </p>
+          ) : (
+            shoppingList.items.map((item) => {
+              const nextStatus =
+                item.status === ShoppingItemStatus.BOUGHT ? ShoppingItemStatus.PENDING : ShoppingItemStatus.BOUGHT;
+
+              return (
+                <article className="app-theme-card flex items-center justify-between rounded-3xl p-4" key={item.id}>
+                  <div>
+                    <p className={`text-sm font-medium ${item.status === ShoppingItemStatus.BOUGHT ? "line-through app-theme-muted" : ""}`}>
+                      {item.quantity ? `${item.quantity} ` : ""}
+                      {item.unit ? `${item.unit} ` : ""}
+                      {item.ingredientName}
+                    </p>
+                    <p className="app-theme-muted text-xs uppercase tracking-wide">{item.source}</p>
+                  </div>
+
+                  <form action={toggleItemStatus}>
+                    <input name="itemId" type="hidden" value={item.id} />
+                    <input name="nextStatus" type="hidden" value={nextStatus} />
+                    <button className="app-theme-secondary-button rounded-full px-4 py-2 text-sm font-medium" type="submit">
+                      {item.status === ShoppingItemStatus.BOUGHT ? "Mark pending" : "Mark bought"}
+                    </button>
+                  </form>
+                </article>
+              );
+            })
+          )}
+        </section>
+      </div>
     </main>
   );
 }

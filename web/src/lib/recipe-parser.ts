@@ -85,7 +85,7 @@ export async function parseRecipeWithGitHubModels(rawText: string): Promise<Pars
 
   const completion = await client.chat.completions.create({
     model,
-    temperature: 0.2,
+    temperature: 1,
     response_format: { type: "json_object" },
     messages: [
       {

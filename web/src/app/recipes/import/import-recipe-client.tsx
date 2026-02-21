@@ -86,16 +86,16 @@ export function ImportRecipeClient() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-xl border border-zinc-200 p-5">
+      <section className="app-theme-card rounded-3xl p-5">
         <h2 className="text-lg font-semibold">1) Paste recipe text</h2>
         <textarea
-          className="mt-3 min-h-44 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+          className="app-theme-input mt-3 min-h-44 w-full rounded-xl px-3 py-2 text-sm"
           onChange={(event) => setSourceText(event.target.value)}
           placeholder="Paste free-form recipe text here..."
           value={sourceText}
         />
         <button
-          className="mt-3 rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="app-theme-primary-button mt-3 rounded-2xl px-5 py-2 text-sm font-medium disabled:opacity-50"
           disabled={isParsing || sourceText.trim().length === 0}
           onClick={parseRecipe}
           type="button"
@@ -104,14 +104,14 @@ export function ImportRecipeClient() {
         </button>
       </section>
 
-      <section className="rounded-xl border border-zinc-200 p-5">
+      <section className="app-theme-card rounded-3xl p-5">
         <h2 className="text-lg font-semibold">2) Review and edit</h2>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             <span>Title</span>
             <input
-              className="rounded-md border border-zinc-300 px-3 py-2"
+              className="app-theme-input rounded-xl px-3 py-2"
               onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
               value={draft.title}
             />
@@ -120,7 +120,7 @@ export function ImportRecipeClient() {
           <label className="flex flex-col gap-1 text-sm sm:col-span-2">
             <span>Description</span>
             <textarea
-              className="rounded-md border border-zinc-300 px-3 py-2"
+              className="app-theme-input rounded-xl px-3 py-2"
               onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
               rows={3}
               value={draft.description}
@@ -130,7 +130,7 @@ export function ImportRecipeClient() {
           <label className="flex flex-col gap-1 text-sm">
             <span>Servings</span>
             <input
-              className="rounded-md border border-zinc-300 px-3 py-2"
+              className="app-theme-input rounded-xl px-3 py-2"
               min={1}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -146,7 +146,7 @@ export function ImportRecipeClient() {
           <label className="flex flex-col gap-1 text-sm">
             <span>Tags (comma-separated)</span>
             <input
-              className="rounded-md border border-zinc-300 px-3 py-2"
+              className="app-theme-input rounded-xl px-3 py-2"
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -166,7 +166,7 @@ export function ImportRecipeClient() {
           {draft.ingredients.map((ingredient, index) => (
             <div className="grid gap-2 sm:grid-cols-4" key={`${ingredient.name}-${index}`}>
               <input
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm sm:col-span-2"
+                className="app-theme-input rounded-xl px-3 py-2 text-sm sm:col-span-2"
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
@@ -179,7 +179,7 @@ export function ImportRecipeClient() {
                 value={ingredient.name}
               />
               <input
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm"
+                className="app-theme-input rounded-xl px-3 py-2 text-sm"
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
@@ -196,7 +196,7 @@ export function ImportRecipeClient() {
                 value={ingredient.quantity ?? ""}
               />
               <input
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm"
+                className="app-theme-input rounded-xl px-3 py-2 text-sm"
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
@@ -218,7 +218,7 @@ export function ImportRecipeClient() {
           <p className="text-sm font-medium">Steps</p>
           {draft.steps.map((step, index) => (
             <textarea
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="app-theme-input w-full rounded-xl px-3 py-2 text-sm"
               key={`step-${index}`}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -233,18 +233,18 @@ export function ImportRecipeClient() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-zinc-200 p-5">
+      <section className="app-theme-card rounded-3xl p-5">
         <h2 className="text-lg font-semibold">3) Save recipe</h2>
         <button
-          className="mt-3 rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="app-theme-primary-button mt-3 rounded-2xl px-5 py-2 text-sm font-medium disabled:opacity-50"
           disabled={isSaving || draft.title.trim().length === 0}
           onClick={saveRecipe}
           type="button"
         >
           {isSaving ? "Saving..." : "Save recipe"}
         </button>
-        {saved ? <p className="mt-2 text-sm text-emerald-700">Recipe saved. Refresh recipes page to view it.</p> : null}
-        {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+        {saved ? <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">Recipe saved. Refresh recipes page to view it.</p> : null}
+        {error ? <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{error}</p> : null}
       </section>
     </div>
   );

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-context";
 import { formatDateInputValue, getWeekStartUtc, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
+import { AppNav } from "@/app/_components/app-nav";
 
 const MEAL_TYPES = Object.values(MealType);
 
@@ -13,15 +14,17 @@ export default async function PlannerPage() {
 
   if (!householdId) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 px-6 py-12">
-        <h1 className="text-3xl font-semibold tracking-tight">Meal planner</h1>
-        <p className="text-zinc-600">
-          Your account is authenticated, but no household was found yet. Complete organization setup in WorkOS and sign
-          in again.
-        </p>
-        <Link className="text-sm font-medium underline" href="/">
-          Back home
-        </Link>
+      <main className="app-theme-page px-6 py-12">
+        <section className="app-theme-card mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 rounded-3xl p-8">
+          <h1 className="text-3xl font-semibold tracking-tight">Meal planner</h1>
+          <p className="app-theme-muted">
+            Your account is authenticated, but no household was found yet. Complete organization setup in WorkOS and sign
+            in again.
+          </p>
+          <Link className="app-theme-link w-fit rounded-full px-4 py-2 text-sm font-medium" href="/">
+            Back home
+          </Link>
+        </section>
       </main>
     );
   }
@@ -169,38 +172,28 @@ export default async function PlannerPage() {
   ]);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Meal planner</h1>
-        <p className="text-zinc-600">
-          Week of {weekStart.toISOString().slice(0, 10)} to {weekEnd.toISOString().slice(0, 10)}.
-        </p>
-        <div className="flex gap-4 text-sm">
-          <Link className="underline" href="/recipes">
-            Recipes
-          </Link>
-          <Link className="underline" href="/shopping-list">
-            Shopping list
-          </Link>
-          <Link className="underline" href="/pantry">
-            Pantry
-          </Link>
-          <Link className="underline" href="/">
-            Home
-          </Link>
-        </div>
-      </header>
+    <main className="app-theme-page relative overflow-hidden px-6 py-12">
+      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
+      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
+      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6">
+        <header className="app-theme-card space-y-3 rounded-3xl p-7">
+          <h1 className="text-3xl font-semibold tracking-tight">Meal planner</h1>
+          <p className="app-theme-muted">
+            Week of {weekStart.toISOString().slice(0, 10)} to {weekEnd.toISOString().slice(0, 10)}.
+          </p>
+          <AppNav currentPath="/planner" />
+        </header>
 
-      <section className="rounded-xl border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Add or update meal slot</h2>
-        {recipes.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-600">Create recipes first to start planning meals.</p>
-        ) : (
-          <form action={addEntry} className="mt-4 grid gap-3 sm:grid-cols-2">
+        <section className="app-theme-card rounded-3xl p-5">
+          <h2 className="text-lg font-semibold">Add or update meal slot</h2>
+          {recipes.length === 0 ? (
+            <p className="app-theme-muted mt-3 text-sm">Create recipes first to start planning meals.</p>
+          ) : (
+            <form action={addEntry} className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
               <span>Date</span>
               <input
-                className="rounded-md border border-zinc-300 px-3 py-2"
+                className="app-theme-input rounded-xl px-3 py-2"
                 defaultValue={formatDateInputValue(new Date())}
                 name="date"
                 type="date"
@@ -209,7 +202,7 @@ export default async function PlannerPage() {
 
             <label className="flex flex-col gap-1 text-sm">
               <span>Meal type</span>
-              <select className="rounded-md border border-zinc-300 px-3 py-2" name="mealType">
+              <select className="app-theme-input rounded-xl px-3 py-2" name="mealType">
                 {MEAL_TYPES.map((mealType) => (
                   <option key={mealType} value={mealType}>
                     {mealType}
@@ -220,7 +213,7 @@ export default async function PlannerPage() {
 
             <label className="flex flex-col gap-1 text-sm sm:col-span-2">
               <span>Recipe</span>
-              <select className="rounded-md border border-zinc-300 px-3 py-2" name="recipeId">
+              <select className="app-theme-input rounded-xl px-3 py-2" name="recipeId">
                 {recipes.map((recipe) => (
                   <option key={recipe.id} value={recipe.id}>
                     {recipe.title}
@@ -232,42 +225,43 @@ export default async function PlannerPage() {
             <label className="flex flex-col gap-1 text-sm sm:col-span-2">
               <span>Servings override (optional)</span>
               <input
-                className="rounded-md border border-zinc-300 px-3 py-2"
+                className="app-theme-input rounded-xl px-3 py-2"
                 min={1}
                 name="servingsOverride"
                 type="number"
               />
             </label>
 
-            <button className="w-fit rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white" type="submit">
+            <button className="app-theme-primary-button w-fit rounded-2xl px-5 py-2 text-sm font-medium" type="submit">
               Save meal slot
             </button>
           </form>
-        )}
-      </section>
+          )}
+        </section>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Current week plan</h2>
-        {!mealPlan || mealPlan.entries.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 p-5 text-zinc-600">No meals planned yet.</p>
-        ) : (
-          mealPlan.entries.map((entry) => (
-            <article className="rounded-xl border border-zinc-200 p-5" key={entry.id}>
-              <p className="text-xs uppercase tracking-wide text-zinc-500">
-                {entry.date.toISOString().slice(0, 10)} • {entry.mealType}
-              </p>
-              <h3 className="mt-1 text-lg font-semibold">{entry.recipe.title}</h3>
-              {entry.servingsOverride ? <p className="text-sm text-zinc-600">Servings override: {entry.servingsOverride}</p> : null}
-              <form action={removeEntry} className="mt-3">
-                <input name="entryId" type="hidden" value={entry.id} />
-                <button className="text-sm font-medium underline" type="submit">
-                  Remove
-                </button>
-              </form>
-            </article>
-          ))
-        )}
-      </section>
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Current week plan</h2>
+          {!mealPlan || mealPlan.entries.length === 0 ? (
+            <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">No meals planned yet.</p>
+          ) : (
+            mealPlan.entries.map((entry) => (
+              <article className="app-theme-card rounded-3xl p-5" key={entry.id}>
+                <p className="app-theme-muted text-xs uppercase tracking-wide">
+                  {entry.date.toISOString().slice(0, 10)} • {entry.mealType}
+                </p>
+                <h3 className="mt-1 text-lg font-semibold">{entry.recipe.title}</h3>
+                {entry.servingsOverride ? <p className="app-theme-muted text-sm">Servings override: {entry.servingsOverride}</p> : null}
+                <form action={removeEntry} className="mt-3">
+                  <input name="entryId" type="hidden" value={entry.id} />
+                  <button className="app-theme-secondary-button rounded-full px-4 py-2 text-sm font-medium" type="submit">
+                    Remove
+                  </button>
+                </form>
+              </article>
+            ))
+          )}
+        </section>
+      </div>
     </main>
   );
 }

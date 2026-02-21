@@ -1,80 +1,51 @@
 import Link from "next/link";
-import { getSignInUrl, getSignUpUrl, signOut, withAuth } from "@workos-inc/authkit-nextjs";
+import { redirect } from "next/navigation";
+import { getSignInUrl, getSignUpUrl, withAuth } from "@workos-inc/authkit-nextjs";
 
 export default async function Home() {
-  const { user, organizationId, role } = await withAuth();
+  const { user } = await withAuth();
+  const designRoutes = ["/1", "/2", "/3", "/4", "/5"];
 
   if (!user) {
     const signInUrl = await getSignInUrl();
     const signUpUrl = await getSignUpUrl();
 
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col items-start justify-center gap-6 px-6 py-12">
-        <h1 className="text-4xl font-semibold tracking-tight">Plan meals with Picknic</h1>
-        <p className="text-zinc-600">
-          Build weekly plans, maintain a household recipe collection, and auto-generate shopping lists from your
-          planned recipes.
-        </p>
-        <div className="flex gap-3">
-          <Link className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white" href={signInUrl}>
-            Sign in
-          </Link>
-          <Link className="rounded-full border border-zinc-300 px-5 py-2 text-sm font-medium" href={signUpUrl}>
-            Create account
-          </Link>
+      <main className="app-theme-page relative overflow-hidden px-6 py-12">
+        <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
+        <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
+        <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col items-start justify-center gap-6">
+          <section className="app-theme-card w-full rounded-3xl p-8">
+            <p className="text-xs tracking-[0.24em] uppercase app-theme-muted">Picknic</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Plan meals with calm, modern momentum.</h1>
+            <p className="app-theme-muted mt-3">
+              Build weekly plans, maintain a household recipe collection, and auto-generate shopping lists from your
+              planned recipes.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <Link className="app-theme-primary-button rounded-2xl px-5 py-2 text-sm font-medium" href={signInUrl}>
+                Sign in
+              </Link>
+              <Link className="app-theme-secondary-button rounded-2xl px-5 py-2 text-sm font-medium" href={signUpUrl}>
+                Create account
+              </Link>
+            </div>
+          </section>
+
+          <section className="app-theme-card w-full rounded-3xl p-5">
+            <h2 className="text-sm font-semibold">Design concepts</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {designRoutes.map((route) => (
+                <Link key={route} className="app-theme-link rounded-full px-3 py-1 text-xs font-medium" href={route}>
+                  {route}
+                </Link>
+              ))}
+            </div>
+          </section>
         </div>
       </main>
     );
   }
 
-  const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
-
-  return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-8 px-6 py-12">
-      <header className="space-y-2">
-        <h1 className="text-4xl font-semibold tracking-tight">Welcome back, {displayName}</h1>
-        <p className="text-zinc-600">Your account is connected with WorkOS and ready for profile-based planning.</p>
-      </header>
-
-      <section className="rounded-xl border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Implementation in progress</h2>
-        {organizationId ? (
-          <p className="mt-2 text-sm text-zinc-600">
-            Household context: {organizationId} ({role ?? "member"})
-          </p>
-        ) : null}
-        <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-zinc-700">
-          <li>Recipe collection foundation with Prisma schema</li>
-          <li>Weekly meal plan and shopping list domain models</li>
-          <li>Household collaboration and pantry inventory models</li>
-        </ul>
-        <Link className="mt-4 inline-block text-sm font-medium underline" href="/recipes">
-          Open recipes
-        </Link>
-        <Link className="mt-2 block text-sm font-medium underline" href="/planner">
-          Open meal planner
-        </Link>
-        <Link className="mt-2 block text-sm font-medium underline" href="/shopping-list">
-          Open shopping list
-        </Link>
-        <Link className="mt-2 block text-sm font-medium underline" href="/pantry">
-          Open pantry
-        </Link>
-        <Link className="mt-2 block text-sm font-medium underline" href="/recipes/import">
-          Open recipe parser
-        </Link>
-      </section>
-
-      <form
-        action={async () => {
-          "use server";
-          await signOut();
-        }}
-      >
-        <button className="rounded-full border border-zinc-300 px-5 py-2 text-sm font-medium" type="submit">
-          Sign out
-        </button>
-      </form>
-    </main>
-  );
+  redirect("/recipes");
 }
