@@ -4,13 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { signOutAction } from "@/app/_actions/auth-actions";
 import { Dropdown } from "@/app/_components/dropdown";
-
-type ThemeChoice = "system" | "light" | "dark";
-
-const THEME_STORAGE_KEY = "picknic-ui-theme";
+import { applyThemeChoice, getInitialThemeChoice, persistThemeChoice, THEME_CHOICES, ThemeChoice } from "@/lib/theme-choice";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Home" },
+  { href: "/recipes", label: "recipes" },
   { href: "/planner", label: "Planner" },
   { href: "/shopping-list", label: "Shopping" },
   { href: "/pantry", label: "Pantry" },
@@ -24,39 +21,13 @@ function isActive(currentPath: string, href: string) {
   return currentPath === href || currentPath.startsWith(`${href}/`);
 }
 
-function getInitialTheme(): ThemeChoice {
-  if (typeof window === "undefined") {
-    return "system";
-  }
-
-  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (saved === "light" || saved === "dark" || saved === "system") {
-    return saved;
-  }
-
-  return "system";
-}
-
-function applyTheme(theme: ThemeChoice) {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  if (theme === "system") {
-    document.documentElement.removeAttribute("data-theme");
-    return;
-  }
-
-  document.documentElement.setAttribute("data-theme", theme);
-}
-
 export function AppNav({ currentPath }: { currentPath: string }) {
-  const [theme, setTheme] = useState<ThemeChoice>(getInitialTheme);
+  const [theme, setTheme] = useState<ThemeChoice>(getInitialThemeChoice);
   const dropdownOptionClass = "app-dropdown-option rounded-xl px-3 py-2 text-left font-medium";
 
   useEffect(() => {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    applyTheme(theme);
+    persistThemeChoice(theme);
+    applyThemeChoice(theme);
   }, [theme]);
 
   return (
@@ -70,7 +41,7 @@ export function AppNav({ currentPath }: { currentPath: string }) {
           summaryClassName="app-theme-secondary-button cursor-pointer list-none rounded-full px-4 py-2 text-sm font-medium"
         >
           <div className="flex flex-col gap-1 text-sm">
-            {(["system", "light", "dark"] as ThemeChoice[]).map((value) => (
+            {THEME_CHOICES.map((value) => (
               <button
                 key={value}
                 type="button"
@@ -108,7 +79,7 @@ export function AppNav({ currentPath }: { currentPath: string }) {
       </div>
 
       <div className="overflow-x-auto">
-        <div className="grid min-w-[420px] grid-cols-4 gap-3">
+        <div className="grid min-w-105 grid-cols-4 gap-3">
           {NAV_ITEMS.map((item) => {
             const active = isActive(currentPath, item.href);
 

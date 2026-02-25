@@ -5,7 +5,7 @@ import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-cont
 import { getWeekStartUtc } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { generateShoppingListForWeek, getShoppingListForWeek } from "@/lib/shopping-list-service";
-import { AppNav } from "@/app/_components/app-nav";
+import { AppPageShell } from "@/app/_components/page-shell";
 
 export default async function ShoppingListPage() {
   const { userId, organizationId } = await requireAppAuthContext();
@@ -148,19 +148,12 @@ export default async function ShoppingListPage() {
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
 
   return (
-    <main className="app-theme-page relative overflow-hidden px-6 py-12">
-      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6">
-        <header className="app-theme-card space-y-3 rounded-3xl p-7">
-          <h1 className="text-3xl font-semibold tracking-tight">Shopping list</h1>
-          <p className="app-theme-muted">
-            Week of {weekStart.toISOString().slice(0, 10)} to {weekEnd.toISOString().slice(0, 10)}.
-          </p>
-          <AppNav currentPath="/shopping-list" />
-        </header>
-
-        <section className="app-theme-card rounded-3xl p-5">
+    <AppPageShell
+      currentPath="/shopping-list"
+      title="Shopping list"
+      subtitle={`Week of ${weekStart.toISOString().slice(0, 10)} to ${weekEnd.toISOString().slice(0, 10)}.`}
+    >
+      <section className="app-theme-card rounded-3xl p-5">
           <h2 className="text-lg font-semibold">Generate list from meal plan</h2>
           <p className="app-theme-muted mt-2 text-sm">
             Regenerate to refresh auto items from planned meals; manual items are preserved.
@@ -170,9 +163,9 @@ export default async function ShoppingListPage() {
               Generate or refresh
             </button>
           </form>
-        </section>
+      </section>
 
-        <section className="app-theme-card rounded-3xl p-5">
+      <section className="app-theme-card rounded-3xl p-5">
           <h2 className="text-lg font-semibold">Add manual item</h2>
           <form action={addManualItem} className="mt-4 grid gap-3 sm:grid-cols-3">
             <input className="app-theme-input rounded-xl px-3 py-2 sm:col-span-2" name="ingredientName" placeholder="Item name" />
@@ -182,9 +175,9 @@ export default async function ShoppingListPage() {
               Add item
             </button>
           </form>
-        </section>
+      </section>
 
-        <section className="space-y-3">
+      <section className="space-y-3">
           <h2 className="text-lg font-semibold">Items</h2>
           {!shoppingList || shoppingList.items.length === 0 ? (
             <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">
@@ -217,8 +210,7 @@ export default async function ShoppingListPage() {
               );
             })
           )}
-        </section>
-      </div>
-    </main>
+      </section>
+    </AppPageShell>
   );
 }

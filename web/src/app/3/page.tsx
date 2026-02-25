@@ -46,7 +46,7 @@ export default function DesignThreePage() {
               <p className="mt-2 text-sm text-stone-600">Refresh your list to include this week&apos;s latest meal edits.</p>
               <Link
                 href="/shopping-list"
-                className="mt-4 inline-block rounded-2xl bg-gradient-to-r from-indigo-600 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white"
+                className="mt-4 inline-block rounded-2xl bg-linear-to-r from-indigo-600 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white"
               >
                 Open smart list
               </Link>
@@ -68,7 +68,7 @@ export default function DesignThreePage() {
                   <span>{value}%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-stone-200">
-                  <div className={`h-full bg-gradient-to-r ${gradient}`} style={{ width: `${value}%` }} />
+                  <div className={`h-full bg-linear-to-r ${gradient}`} style={{ width: `${value}%` }} />
                 </div>
               </div>
             ))}

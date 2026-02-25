@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-context";
 import { formatDateInputValue, getWeekStartUtc, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
-import { AppNav } from "@/app/_components/app-nav";
+import { AppPageShell } from "@/app/_components/page-shell";
 
 const MEAL_TYPES = Object.values(MealType);
 
@@ -172,19 +172,12 @@ export default async function PlannerPage() {
   ]);
 
   return (
-    <main className="app-theme-page relative overflow-hidden px-6 py-12">
-      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6">
-        <header className="app-theme-card space-y-3 rounded-3xl p-7">
-          <h1 className="text-3xl font-semibold tracking-tight">Meal planner</h1>
-          <p className="app-theme-muted">
-            Week of {weekStart.toISOString().slice(0, 10)} to {weekEnd.toISOString().slice(0, 10)}.
-          </p>
-          <AppNav currentPath="/planner" />
-        </header>
-
-        <section className="app-theme-card rounded-3xl p-5">
+    <AppPageShell
+      currentPath="/planner"
+      title="Meal planner"
+      subtitle={`Week of ${weekStart.toISOString().slice(0, 10)} to ${weekEnd.toISOString().slice(0, 10)}.`}
+    >
+      <section className="app-theme-card rounded-3xl p-5">
           <h2 className="text-lg font-semibold">Add or update meal slot</h2>
           {recipes.length === 0 ? (
             <p className="app-theme-muted mt-3 text-sm">Create recipes first to start planning meals.</p>
@@ -237,9 +230,9 @@ export default async function PlannerPage() {
             </button>
           </form>
           )}
-        </section>
+      </section>
 
-        <section className="space-y-3">
+      <section className="space-y-3">
           <h2 className="text-lg font-semibold">Current week plan</h2>
           {!mealPlan || mealPlan.entries.length === 0 ? (
             <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">No meals planned yet.</p>
@@ -260,8 +253,7 @@ export default async function PlannerPage() {
               </article>
             ))
           )}
-        </section>
-      </div>
-    </main>
+      </section>
+    </AppPageShell>
   );
 }

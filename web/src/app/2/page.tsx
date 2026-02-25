@@ -1,21 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-
-type ThemeChoice = "light" | "dark" | "system";
+import { useEffect, useState } from "react";
+import {
+  applyThemeChoice,
+  getInitialThemeChoice,
+  isDarkThemeChoice,
+  persistThemeChoice,
+  THEME_CHOICES,
+  type ThemeChoice,
+} from "@/lib/theme-choice";
 
 export default function DesignTwoPage() {
-  const [theme, setTheme] = useState<ThemeChoice>("system");
-  const isDark =
-    theme === "dark" || (theme === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [theme, setTheme] = useState<ThemeChoice>(getInitialThemeChoice);
+  const isDark = isDarkThemeChoice(theme);
+
+  useEffect(() => {
+    persistThemeChoice(theme);
+    applyThemeChoice(theme);
+  }, [theme]);
 
   return (
     <main
       className={`relative min-h-screen overflow-hidden px-6 py-14 ${
         isDark
-          ? "bg-[radial-gradient(circle_at_top,_#1e1b4b_0%,_#0f172a_45%,_#020617_100%)] text-stone-100"
-          : "bg-[radial-gradient(circle_at_15%_0%,_#bfdbfe_0%,_#ddd6fe_38%,_#f5f5f4_100%)] text-stone-900"
+          ? "bg-[radial-gradient(circle_at_top,#1e1b4b_0%,#0f172a_45%,#020617_100%)] text-stone-100"
+          : "bg-[radial-gradient(circle_at_15%_0%,#bfdbfe_0%,#ddd6fe_38%,#f5f5f4_100%)] text-stone-900"
       }`}
     >
       <div
@@ -35,16 +45,12 @@ export default function DesignTwoPage() {
             isDark ? "border-white/20 bg-white/10" : "border-stone-200 bg-white/80"
           }`}
         >
-          {[
-            ["light", "Light"],
-            ["dark", "Dark"],
-            ["system", "System"],
-          ].map(([value, label]) => (
+          {THEME_CHOICES.map((value) => (
             <button
               key={value}
               type="button"
               aria-pressed={theme === value}
-              onClick={() => setTheme(value as ThemeChoice)}
+              onClick={() => setTheme(value)}
               className={`rounded-full px-3 py-1 font-semibold transition ${
                 theme === value
                   ? isDark
@@ -55,7 +61,8 @@ export default function DesignTwoPage() {
                     : "text-stone-700 hover:bg-stone-200"
               }`}
             >
-              {label}
+              {value[0].toUpperCase()}
+              {value.slice(1)}
             </button>
           ))}
         </div>
@@ -72,7 +79,7 @@ export default function DesignTwoPage() {
             frosted surfaces, with a full dark-mode counterpart.
           </p>
           <div className="mt-6 flex flex-wrap gap-3 text-sm font-semibold">
-            <Link className="rounded-2xl bg-gradient-to-r from-indigo-600 to-fuchsia-500 px-4 py-2 text-white" href="/recipes">
+            <Link className="rounded-2xl bg-linear-to-r from-indigo-600 to-fuchsia-500 px-4 py-2 text-white" href="/recipes">
               Recipes
             </Link>
             <Link
@@ -115,7 +122,7 @@ export default function DesignTwoPage() {
                     <span>{value}%</span>
                   </div>
                   <div className={`h-2 overflow-hidden rounded-full ${isDark ? "bg-white/15" : "bg-stone-200"}`}>
-                    <div className={`h-full bg-gradient-to-r ${gradient}`} style={{ width: `${value}%` }} />
+                    <div className={`h-full bg-linear-to-r ${gradient}`} style={{ width: `${value}%` }} />
                   </div>
                 </div>
               ))}

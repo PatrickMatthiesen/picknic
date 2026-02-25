@@ -5,6 +5,7 @@ export default authkitMiddleware();
 export const config = {
   matcher: [
     "/",
+    // "/home/:path*",
     "/api/:path*",
     "/recipes/:path*",
     "/planner/:path*",

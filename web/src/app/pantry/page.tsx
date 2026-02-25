@@ -3,7 +3,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
-import { AppNav } from "@/app/_components/app-nav";
+import { AppPageShell } from "@/app/_components/page-shell";
 
 export default async function PantryPage() {
   const { userId, organizationId } = await requireAppAuthContext();
@@ -138,17 +138,12 @@ export default async function PantryPage() {
   });
 
   return (
-    <main className="app-theme-page relative overflow-hidden px-6 py-12">
-      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6">
-        <header className="app-theme-card space-y-3 rounded-3xl p-7">
-          <h1 className="text-3xl font-semibold tracking-tight">Pantry</h1>
-          <p className="app-theme-muted">Manage on-hand ingredients used to reduce generated shopping lists.</p>
-          <AppNav currentPath="/pantry" />
-        </header>
-
-        <section className="app-theme-card rounded-3xl p-5">
+    <AppPageShell
+      currentPath="/pantry"
+      title="Pantry"
+      subtitle="Manage on-hand ingredients used to reduce generated shopping lists."
+    >
+      <section className="app-theme-card rounded-3xl p-5">
           <h2 className="text-lg font-semibold">Add or update pantry item</h2>
           <form action={addOrUpdatePantryItem} className="mt-4 grid gap-3 sm:grid-cols-3">
             <input className="app-theme-input rounded-xl px-3 py-2 sm:col-span-2" name="ingredientName" placeholder="Ingredient name" />
@@ -158,9 +153,9 @@ export default async function PantryPage() {
               Save pantry item
             </button>
           </form>
-        </section>
+      </section>
 
-        <section className="space-y-3">
+      <section className="space-y-3">
           <h2 className="text-lg font-semibold">Current pantry items</h2>
           {items.length === 0 ? (
             <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">No pantry items yet.</p>
@@ -198,8 +193,7 @@ export default async function PantryPage() {
               </article>
             ))
           )}
-        </section>
-      </div>
-    </main>
+      </section>
+    </AppPageShell>
   );
 }

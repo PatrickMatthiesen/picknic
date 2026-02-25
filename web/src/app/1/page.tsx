@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function DesignOnePage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_#c4b5fd_0%,_#ddd6fe_32%,_#f5f5f4_100%)] px-6 py-14 text-stone-900">
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#c4b5fd_0%,#ddd6fe_32%,#f5f5f4_100%)] px-6 py-14 text-stone-900">
       <div className="pointer-events-none absolute -left-16 top-8 h-72 w-72 rounded-full bg-violet-300/40 blur-3xl" />
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-cyan-300/30 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-fuchsia-200/40 blur-3xl" />
@@ -29,7 +29,7 @@ export default function DesignOnePage() {
               ))}
             </div>
             <div className="mt-6 flex flex-wrap gap-3 text-sm">
-              <Link href="/recipes" className="rounded-2xl bg-gradient-to-r from-indigo-600 to-fuchsia-500 px-4 py-2 font-semibold text-white">
+              <Link href="/recipes" className="rounded-2xl bg-linear-to-r from-indigo-600 to-fuchsia-500 px-4 py-2 font-semibold text-white">
                 Recipe collection
               </Link>
               <Link href="/planner" className="rounded-2xl border border-stone-300 bg-white/85 px-4 py-2 font-semibold text-stone-800">

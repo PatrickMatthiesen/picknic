@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
-import { AppNav } from "@/app/_components/app-nav";
+import { AppPageShell } from "@/app/_components/page-shell";
 
 type PageProps = {
   params: Promise<{ recipeId: string }>;
@@ -43,26 +43,22 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   }
 
   return (
-    <main className="app-theme-page relative overflow-hidden px-6 py-12">
-      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/25" />
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-violet-300/35 blur-3xl dark:bg-violet-500/25" />
-      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6">
-        <header className="app-theme-card rounded-3xl p-7">
-          <p className="text-xs uppercase tracking-[0.24em] app-theme-muted">Recipe detail</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{recipe.title}</h1>
-          {recipe.description ? <p className="app-theme-muted mt-2">{recipe.description}</p> : null}
-          <div className="mt-4">
-            <AppNav currentPath="/recipes" />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            <span className="app-theme-link rounded-full px-4 py-2">Servings: {recipe.servings}</span>
-            <Link className="app-theme-link rounded-full px-4 py-2" href="/recipes">
-              Back to recipes
-            </Link>
-          </div>
-        </header>
-
-        <section className="app-theme-card rounded-3xl p-6">
+    <AppPageShell
+      currentPath="/recipes"
+      eyebrow="Recipe detail"
+      title={recipe.title}
+      subtitle={recipe.description ?? undefined}
+      maxWidthClassName="max-w-5xl"
+      headerChildren={
+        <div className="flex flex-wrap gap-2 text-sm">
+          <span className="app-theme-link rounded-full px-4 py-2">Servings: {recipe.servings}</span>
+          <Link className="app-theme-link rounded-full px-4 py-2" href="/recipes">
+            Back to recipes
+          </Link>
+        </div>
+      }
+    >
+      <section className="app-theme-card rounded-3xl p-6">
           <h2 className="text-xl font-semibold">Ingredients</h2>
           {recipe.ingredients.length === 0 ? (
             <p className="app-theme-muted mt-3 text-sm">No ingredients listed.</p>
@@ -77,9 +73,9 @@ export default async function RecipeDetailPage({ params }: PageProps) {
               ))}
             </ul>
           )}
-        </section>
+      </section>
 
-        <section className="app-theme-card rounded-3xl p-6">
+      <section className="app-theme-card rounded-3xl p-6">
           <h2 className="text-xl font-semibold">Steps</h2>
           {recipe.steps.length === 0 ? (
             <p className="app-theme-muted mt-3 text-sm">No steps listed.</p>
@@ -93,8 +89,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
               ))}
             </ol>
           )}
-        </section>
-      </div>
-    </main>
+      </section>
+    </AppPageShell>
   );
 }

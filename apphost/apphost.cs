@@ -1,5 +1,5 @@
-#:sdk Aspire.AppHost.Sdk@13.3.0-preview.1.26118.1
-#:package Aspire.Hosting.PostgreSQL@13.3.0-preview.1.26118.1
+#:sdk Aspire.AppHost.Sdk@13.3.0-preview.1.26124.19
+#:package Aspire.Hosting.PostgreSQL@13.3.0-preview.1.26124.19
 #:package CommunityToolkit.Aspire.Hosting.Bun@13.1.2-beta.518
 
 using Aspire.Hosting.ApplicationModel;
@@ -16,6 +16,7 @@ var githubModelsEndpoint = builder.AddParameter("github-models-endpoint");
 const int webPort = 57334;
 
 var postgres = builder.AddPostgres("postgres")
+    .WithContainerName("picknic-postgres")
     .WithPgAdmin();
 var picknicdb = postgres.AddDatabase("picknicdb");
 

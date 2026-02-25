@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function DesignFivePage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_#c4b5fd_0%,_#ddd6fe_30%,_#f5f5f4_100%)] px-6 py-14 text-stone-900">
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#c4b5fd_0%,#ddd6fe_30%,#f5f5f4_100%)] px-6 py-14 text-stone-900">
       <div className="pointer-events-none absolute -top-24 left-1/4 h-72 w-72 rounded-full bg-fuchsia-300/30 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 right-12 h-72 w-72 rounded-full bg-cyan-300/30 blur-3xl" />
 

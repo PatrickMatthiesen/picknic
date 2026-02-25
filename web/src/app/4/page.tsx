@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function DesignFourPage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_#1e1b4b_0%,_#0f172a_45%,_#020617_100%)] px-6 py-10 text-stone-100">
+    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#1e1b4b_0%,#0f172a_45%,#020617_100%)] px-6 py-10 text-stone-100">
       <div className="pointer-events-none absolute -left-16 top-6 h-72 w-72 rounded-full bg-fuchsia-500/20 blur-3xl" />
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-cyan-500/20 blur-3xl" />
 
@@ -33,7 +33,7 @@ export default function DesignFourPage() {
             ].map(([label, value, gradient]) => (
               <article
                 key={label}
-                className={`rounded-3xl border border-white/25 bg-gradient-to-br ${gradient} p-5 text-white shadow-[0_16px_40px_rgba(0,0,0,0.35)]`}
+                className={`rounded-3xl border border-white/25 bg-linear-to-br ${gradient} p-5 text-white shadow-[0_16px_40px_rgba(0,0,0,0.35)]`}
               >
                 <p className="text-xs uppercase tracking-[0.2em] text-white/80">{label}</p>
                 <p className="mt-3 text-4xl font-semibold">{value}</p>
@@ -65,7 +65,7 @@ export default function DesignFourPage() {
                     <span>{value}%</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-white/15">
-                    <div className={`h-full bg-gradient-to-r ${gradient}`} style={{ width: `${value}%` }} />
+                    <div className={`h-full bg-linear-to-r ${gradient}`} style={{ width: `${value}%` }} />
                   </div>
                 </div>
               ))}
