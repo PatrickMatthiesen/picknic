@@ -3,6 +3,7 @@ export type ThemeChoice = "system" | "light" | "dark";
 export const THEME_CHOICES: ThemeChoice[] = ["system", "light", "dark"];
 
 const THEME_STORAGE_KEY = "picknic-ui-theme";
+const themeChoiceListeners = new Set<() => void>();
 
 export function getInitialThemeChoice(): ThemeChoice {
     if (typeof window === "undefined") {
@@ -15,6 +16,14 @@ export function getInitialThemeChoice(): ThemeChoice {
     }
 
     return "system";
+}
+
+export function getThemeChoiceServerSnapshot(): ThemeChoice {
+    return "system";
+}
+
+export function getThemeChoiceSnapshot(): ThemeChoice {
+    return getInitialThemeChoice();
 }
 
 export function applyThemeChoice(theme: ThemeChoice) {
@@ -36,6 +45,38 @@ export function persistThemeChoice(theme: ThemeChoice) {
     }
 
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+}
+
+export function subscribeThemeChoice(listener: () => void): () => void {
+    themeChoiceListeners.add(listener);
+
+    if (typeof window === "undefined") {
+        return () => {
+            themeChoiceListeners.delete(listener);
+        };
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+        if (event.key === THEME_STORAGE_KEY) {
+            listener();
+        }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+        themeChoiceListeners.delete(listener);
+        window.removeEventListener("storage", handleStorage);
+    };
+}
+
+export function setThemeChoice(theme: ThemeChoice) {
+    persistThemeChoice(theme);
+    applyThemeChoice(theme);
+
+    for (const listener of themeChoiceListeners) {
+        listener();
+    }
 }
 
 export function isDarkThemeChoice(theme: ThemeChoice): boolean {

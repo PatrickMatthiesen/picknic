@@ -1,10 +1,10 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { MembershipRole, MealType, PrismaClient, ShoppingItemSource, ShoppingItemStatus } from "@prisma/client";
 
-const connectionString = process.env.DATABASE_URL ?? process.env.ConnectionStrings__picknicdb;
+const connectionString = process.env.ConnectionStrings__picknicdb ?? process.env.DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error("DATABASE_URL or ConnectionStrings__picknicdb must be set for seeding.");
+  throw new Error("ConnectionStrings__picknicdb or DATABASE_URL must be set for seeding.");
 }
 
 const prisma = new PrismaClient({

@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { signOutAction } from "@/app/_actions/auth-actions";
 import { Dropdown } from "@/app/_components/dropdown";
-import { applyThemeChoice, getInitialThemeChoice, persistThemeChoice, THEME_CHOICES, ThemeChoice } from "@/lib/theme-choice";
+import {
+  applyThemeChoice,
+  getThemeChoiceServerSnapshot,
+  getThemeChoiceSnapshot,
+  setThemeChoice,
+  subscribeThemeChoice,
+  THEME_CHOICES,
+} from "@/lib/theme-choice";
 
 const NAV_ITEMS = [
   { href: "/recipes", label: "recipes" },
@@ -22,11 +29,10 @@ function isActive(currentPath: string, href: string) {
 }
 
 export function AppNav({ currentPath }: { currentPath: string }) {
-  const [theme, setTheme] = useState<ThemeChoice>(getInitialThemeChoice);
+  const theme = useSyncExternalStore(subscribeThemeChoice, getThemeChoiceSnapshot, getThemeChoiceServerSnapshot);
   const dropdownOptionClass = "app-dropdown-option rounded-xl px-3 py-2 text-left font-medium";
 
   useEffect(() => {
-    persistThemeChoice(theme);
     applyThemeChoice(theme);
   }, [theme]);
 
@@ -45,7 +51,7 @@ export function AppNav({ currentPath }: { currentPath: string }) {
               <button
                 key={value}
                 type="button"
-                onClick={() => setTheme(value)}
+                onClick={() => setThemeChoice(value)}
                 className={`${dropdownOptionClass} ${theme === value ? "app-theme-primary-button" : "app-theme-link"}`}
               >
                 {value[0].toUpperCase()}
