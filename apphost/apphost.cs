@@ -20,6 +20,8 @@ var githubModelsModel = builder.AddParameter("github-models-model", "openai/gpt-
 var githubModelsEndpoint = builder.AddParameter("github-models-endpoint");
 
 var postgres = builder.AddPostgres("postgres")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithDataBindMount("pgdata")
     .WithPgAdmin();
 var picknicdb = postgres.AddDatabase("picknicdb");
 
