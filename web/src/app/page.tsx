@@ -4,7 +4,6 @@ import { getSignInUrl, getSignUpUrl, withAuth } from "@workos-inc/authkit-nextjs
 
 export default async function Home() {
   const { user } = await withAuth();
-  const designRoutes = ["/1", "/2", "/3", "/4", "/5"];
 
   if (!user) {
     const signInUrl = await getSignInUrl();
@@ -29,17 +28,6 @@ export default async function Home() {
               <Link className="app-theme-secondary-button rounded-2xl px-5 py-2 text-sm font-medium" href={signUpUrl}>
                 Create account
               </Link>
-            </div>
-          </section>
-
-          <section className="app-theme-card w-full rounded-3xl p-5">
-            <h2 className="text-sm font-semibold">Design concepts</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {designRoutes.map((route) => (
-                <Link key={route} className="app-theme-link rounded-full px-3 py-1 text-xs font-medium" href={route}>
-                  {route}
-                </Link>
-              ))}
             </div>
           </section>
         </div>
