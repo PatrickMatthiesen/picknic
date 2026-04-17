@@ -2,23 +2,17 @@
 
 ## Build, test, and lint commands
 
-- **Install deps (web app):**
-  - `cd web && bun install --frozen-lockfile`
+- **Run distributed app and check logs with Aspire (repo root):**
+  - `aspire run`
+  - In agent/non-interactive environments: `aspire run --detach --isolated`
+  - Stop running apphost: `aspire stop`
+  - Activate the /Aspire skill to know more
 - **Generate Prisma client (expected in CI and after schema changes):**
   - `cd web && bun run prisma:generate`
 - **Run lint:**
   - `cd web && bun run lint`
 - **Run tests:**
   - `cd web && bun run test`
-- **Run a single test file:**
-  - `cd web && bun test src/lib/shopping-list.test.ts`
-  - `cd web && bun test src/lib/meal-plan.test.ts`
-- **Build production web app:**
-  - `cd web && bun run build`
-- **Run distributed app with Aspire (repo root):**
-  - `aspire run`
-  - In agent/non-interactive environments: `aspire run --detach --isolated`
-  - Stop running apphost: `aspire stop`
 
 ## High-level architecture
 
@@ -30,17 +24,7 @@
 - `web/` is a **Next.js App Router** app (TypeScript + Bun) with API routes under `src/app/api/*` and UI pages under `src/app/*`.
 - Persistence is in **PostgreSQL via Prisma** (`web/prisma/schema.prisma`) with household-scoped domain models:
   - users, households, memberships, recipes (+ ingredients/steps), meal plans (+ entries), shopping lists (+ items), pantry items.
-- Authentication and tenant context:
-  - `web/src/proxy.ts` applies WorkOS `authkitMiddleware` to app/API routes.
-  - `web/src/app/callback/route.ts` handles callback and redirects on failure.
-  - `web/src/lib/auth-context.ts` links WorkOS users to DB records and resolves active household membership.
-- Shopping list generation path:
-  - API: `src/app/api/shopping-lists/route.ts`
-  - Service/domain logic: `src/lib/shopping-list-service.ts` + `src/lib/shopping-list.ts`
-  - Generated AUTO items are derived from meal plans and reduced by pantry quantities.
-- Recipe parser path:
-  - API: `src/app/api/recipes/parse/route.ts`
-  - Inference client: `src/lib/recipe-parser.ts` using OpenAI SDK against configurable GitHub Models endpoint/model.
+- Authentication is done via **WorkOS**
 
 ## Key repository-specific conventions
 
