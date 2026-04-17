@@ -29,7 +29,7 @@ if (builder.Environment.IsDevelopment())
     postgres.WithContainerName("picknic-postgres");
 
 var web = builder.AddNextJsApp("web", "../web", "dev:aspire")
-    .WithHttpEndpoint(env: "PORT")
+    .WithHttpEndpoint(port: 5173, env: "PORT")
     .WithBun()
     .WithExternalHttpEndpoints()
     .WithReference(picknicdb)
