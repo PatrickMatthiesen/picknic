@@ -1,26 +1,57 @@
-name: Web CI
+name: CI
 
 on:
   push:
+    branches:
+      - "main"
     paths:
       - "web/**"
-      - ".github/workflows/web-ci.yml"
+      - "apphost/**"
+      - ".github/workflows/**"
+      - ".bun-version"
+      - "package.json"
+      - "aspire.config.json"
+      - "apphost.run.json"
+      - "README.md"
   pull_request:
     paths:
       - "web/**"
-      - ".github/workflows/web-ci.yml"
+      - "apphost/**"
+      - ".github/workflows/**"
+      - ".bun-version"
+      - "package.json"
+      - "aspire.config.json"
+      - "apphost.run.json"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  web-checks:
+  web:
+    name: Web and Aspire
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: web
+    timeout-minutes: 25
+    env:
+      ASPIRE_ENVIRONMENT: Development
+      WORKOS_API_KEY: sk_test_ci_placeholder
+      WORKOS_CLIENT_ID: client_ci_placeholder
+      WORKOS_COOKIE_PASSWORD: ci-only-cookie-password-at-least-32-characters
+      NEXT_PUBLIC_WORKOS_REDIRECT_URI: http://localhost:5333/callback
+      WORKOS_REDIRECT_URI: http://localhost:5333/callback
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -28,16 +59,81 @@ jobs:
           bun-version: "1.3.7"
 
       - name: Install dependencies
+        working-directory: web
         run: bun install --frozen-lockfile
 
-      - name: Prisma generate
+      - name: Generate Prisma client
+        working-directory: web
         run: bun run prisma:generate
 
-      - name: Run tests
+      - name: Validate Prisma schema
+        working-directory: web
+        run: bunx prisma validate
+
+      - name: Typecheck
+        working-directory: web
+        run: bunx tsc --noEmit
+
+      - name: Test
+        working-directory: web
         run: bun run test
 
       - name: Lint
+        working-directory: web
         run: bun run lint
 
       - name: Build
+        working-directory: web
         run: bun run build
+
+      - name: Audit dependencies
+        working-directory: web
+        run: bun audit --audit-level=high
+
+      - name: Diagnose WorkOS integration
+        working-directory: web
+        run: bun run workos doctor --install-dir . --skip-ai --skip-api --json
+
+      - name: Install Aspire CLI
+        run: |
+          curl -sSL https://aspire.dev/install.sh | bash -s -- --quality "dev"
+          echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
+
+      - name: Diagnose Aspire environment
+        run: aspire doctor --non-interactive
+
+      - name: Start Aspire
+        run: aspire start --apphost apphost/apphost.cs --isolated --non-interactive
+
+      - name: Wait for Aspire database
+        run: aspire wait picknicdb --status healthy --timeout 180 --apphost apphost/apphost.cs --non-interactive
+
+      - name: Wait for web application
+        run: aspire wait web --status healthy --timeout 180 --apphost apphost/apphost.cs --non-interactive
+
+      - name: Verify Aspire database and application
+        shell: bash
+        run: |
+          resource_json="$(aspire describe web --format Json --apphost apphost/apphost.cs --non-interactive)"
+          database_url="$(jq -r '.resources[] | select(.displayName == "web") | .environment.PICKNICDB_URI' <<< "$resource_json")"
+          web_url="$(jq -r '.resources[] | select(.displayName == "web") | .urls[] | select(.name == "http") | .url' <<< "$resource_json")"
+
+          test -n "$database_url" && test "$database_url" != "null"
+          test -n "$web_url" && test "$web_url" != "null"
+          echo "::add-mask::$database_url"
+
+          (
+            cd web
+            DATABASE_URL="$database_url" bunx prisma migrate status
+          )
+
+          curl --fail --silent --show-error "$web_url/" > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$web_url/api/recipes")" = "401"
+
+      - name: Show Aspire logs on failure
+        if: failure()
+        run: aspire logs --tail 200 --apphost apphost/apphost.cs --non-interactive
+
+      - name: Stop Aspire
+        if: always()
+        run: aspire stop --apphost apphost/apphost.cs --non-interactive
