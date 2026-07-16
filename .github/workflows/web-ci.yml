@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - "main"
     paths:
       - "web/**"
       - "apphost/**"
@@ -31,26 +33,8 @@ concurrency:
 
 jobs:
   web:
-    name: Web and database
+    name: Web
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: picknic
-          POSTGRES_PASSWORD: picknic-ci
-          POSTGRES_DB: picknic
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U picknic -d picknic"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      DATABASE_URL: postgresql://picknic:picknic-ci@localhost:5432/picknic?schema=public
 
     defaults:
       run:
@@ -73,9 +57,6 @@ jobs:
 
       - name: Validate Prisma schema
         run: bunx prisma validate
-
-      - name: Apply migrations to a clean database
-        run: bunx prisma migrate deploy
 
       - name: Typecheck
         run: bunx tsc --noEmit
@@ -102,8 +83,17 @@ jobs:
         run: bun run workos doctor --install-dir . --skip-ai --skip-api --json
 
   apphost:
-    name: Aspire AppHost
+    name: Aspire integration
     runs-on: ubuntu-latest
+    needs: web
+    timeout-minutes: 20
+    env:
+      ASPIRE_ENVIRONMENT: Development
+      WORKOS_API_KEY: sk_test_ci_placeholder
+      WORKOS_CLIENT_ID: client_ci_placeholder
+      WORKOS_COOKIE_PASSWORD: ci-only-cookie-password-at-least-32-characters
+      NEXT_PUBLIC_WORKOS_REDIRECT_URI: http://localhost:5333/callback
+      WORKOS_REDIRECT_URI: http://localhost:5333/callback
 
     steps:
       - name: Checkout
@@ -114,18 +104,55 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Install matching Aspire daily CLI
-        run: >-
-          dotnet tool install Aspire.Cli
-          --tool-path .tools
-          --version 13.5.0-preview.1.26365.1
-          --configfile apphost/nuget.config
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.7"
 
-      - name: Restore AppHost from mapped feeds
-        run: dotnet restore apphost/apphost.cs --configfile apphost/nuget.config
+      - name: Install web dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
 
-      - name: Build AppHost
-        run: dotnet build apphost/apphost.cs --no-restore -p:NoWarn=ASPIREJAVASCRIPT001
+      - name: Install Aspire CLI
+        run: |
+          curl -sSL https://aspire.dev/install.sh | bash -s -- --quality "dev"
+          echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
 
       - name: Diagnose Aspire environment
-        run: .tools/aspire doctor --non-interactive
+        run: aspire doctor --non-interactive
+
+      - name: Start Aspire
+        run: aspire start --apphost apphost/apphost.cs --isolated --non-interactive
+
+      - name: Wait for Aspire database
+        run: aspire wait picknicdb --status healthy --timeout 180 --apphost apphost/apphost.cs --non-interactive
+
+      - name: Wait for web application
+        run: aspire wait web --status healthy --timeout 180 --apphost apphost/apphost.cs --non-interactive
+
+      - name: Verify Aspire database and application
+        shell: bash
+        run: |
+          resource_json="$(aspire describe web --format Json --apphost apphost/apphost.cs --non-interactive)"
+          database_url="$(jq -r '.resources[] | select(.displayName == "web") | .environment.PICKNICDB_URI' <<< "$resource_json")"
+          web_url="$(jq -r '.resources[] | select(.displayName == "web") | .urls[] | select(.name == "http") | .url' <<< "$resource_json")"
+
+          test -n "$database_url" && test "$database_url" != "null"
+          test -n "$web_url" && test "$web_url" != "null"
+          echo "::add-mask::$database_url"
+
+          (
+            cd web
+            DATABASE_URL="$database_url" bunx prisma migrate status
+          )
+
+          curl --fail --silent --show-error "$web_url/" > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$web_url/api/recipes")" = "401"
+
+      - name: Show Aspire logs on failure
+        if: failure()
+        run: aspire logs --tail 200 --apphost apphost/apphost.cs --non-interactive
+
+      - name: Stop Aspire
+        if: always()
+        run: aspire stop --apphost apphost/apphost.cs --non-interactive

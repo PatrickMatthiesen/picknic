@@ -83,4 +83,4 @@ Run the repository checks from the root:
 bun run check
 ```
 
-CI performs a frozen Bun install, Prisma generation and schema validation, migrations against a clean PostgreSQL database, typechecking, tests, linting, a production build, a high-severity dependency audit, AppHost restore/build through the mapped daily feed, and `aspire doctor`. Required CI jobs do not receive WorkOS or GitHub Models secrets; a real WorkOS sign-in remains an optional staging smoke test.
+CI performs a frozen Bun install, Prisma generation and schema validation, typechecking, tests, linting, a production build, and a high-severity dependency audit. Its Aspire integration job installs the dev-channel CLI, starts the file-based AppHost in isolation, waits for an Aspire-provisioned PostgreSQL database and the web app, verifies migrations against that database, checks the live public and unauthorized API behavior, and then stops Aspire. Required CI jobs do not receive real WorkOS or GitHub Models secrets; a real WorkOS sign-in remains an optional staging smoke test.
