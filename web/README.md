@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Picknic Web
 
-## Getting Started
+The Picknic web application uses Next.js App Router, Prisma, PostgreSQL, and WorkOS AuthKit. The supported local runtime is the repository's Aspire AppHost; see the root README for prerequisites and the full startup workflow.
 
-First, run the development server:
+## Authentication
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Development and production use the same AuthKit integration. Local development connects to a WorkOS staging or unclaimed environment and stores its credentials in the ignored `web/.env.local` file. There is no application-level development login endpoint or authentication bypass.
+
+From the repository root, configure WorkOS once with the pinned CLI and verify it:
+
+```powershell
+bun run --cwd web workos install --install-dir . --redirect-uri http://localhost:5333/callback --homepage-url http://localhost:5333 --no-branch --no-commit
+bun run --cwd web workos doctor --install-dir . --skip-ai
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Run the installer only when `web/.env.local` is absent; existing credentials are developer-owned. Because the installer can update integration files, review `git diff` after the first run. Use the doctor command to detect configuration drift. Picknic authorization currently lives in the local Prisma household model, so setup does not seed unused WorkOS roles, permissions, or organizations.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Start PostgreSQL and the web application through Aspire from the repository root:
 
-## Learn More
+```powershell
+bun run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+The application is available at <http://localhost:5333>. AuthKit returns through `/callback`; `/sign-in` is the canonical sign-in initiation route. Stop all resources with `bun run stop`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Validation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Run all web checks directly from this directory with:
 
-## Deploy on Vercel
+```powershell
+bun run check
+bun audit --audit-level=high
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The full repository validation command is `bun run check` from the repository root.

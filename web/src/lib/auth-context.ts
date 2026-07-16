@@ -20,21 +20,55 @@ export async function ensureLinkedProfile(
   organizationId?: string,
 ): Promise<{ id: string }> {
   const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
-  const dbUser = await prisma.user.upsert({
+  const linkedUser = await prisma.user.findUnique({
     where: { workosUserId: user.id },
-    update: {
-      email: user.email,
-      displayName,
-    },
-    create: {
-      workosUserId: user.id,
-      email: user.email,
-      displayName,
-    },
     select: { id: true },
   });
+  const profile = {
+    workosUserId: user.id,
+    email: user.email,
+    displayName,
+  };
+  const dbUser = linkedUser
+    ? await prisma.user.update({
+        where: { id: linkedUser.id },
+        data: profile,
+        select: { id: true },
+      })
+    : await prisma.user.upsert({
+        where: { email: user.email },
+        update: profile,
+        create: profile,
+        select: { id: true },
+      });
 
   if (!organizationId) {
+    const household = await prisma.household.upsert({
+      where: { personalForUserId: dbUser.id },
+      update: {},
+      create: {
+        name: "My Household",
+        ownerId: dbUser.id,
+        personalForUserId: dbUser.id,
+      },
+      select: { id: true },
+    });
+
+    await prisma.householdMember.upsert({
+      where: {
+        householdId_userId: {
+          householdId: household.id,
+          userId: dbUser.id,
+        },
+      },
+      update: { role: MembershipRole.OWNER },
+      create: {
+        householdId: household.id,
+        userId: dbUser.id,
+        role: MembershipRole.OWNER,
+      },
+    });
+
     return dbUser;
   }
 
@@ -71,6 +105,7 @@ export async function ensureLinkedProfile(
 
 export async function requireAppAuthContext(): Promise<AppAuthContext> {
   const { user, organizationId } = await withAuth({ ensureSignedIn: true });
+
   const dbUser = await ensureLinkedProfile(user, organizationId);
 
   return {

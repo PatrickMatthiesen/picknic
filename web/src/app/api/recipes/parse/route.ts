@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
-import { parseRecipeWithGitHubModels } from "@/lib/recipe-parser";
+import { parseRecipeWithGitHubModels, RecipeParserNotConfiguredError } from "@/lib/recipe-parser";
 
 type ParsePayload = { text?: unknown };
 
@@ -22,7 +22,11 @@ export async function POST(request: Request) {
     const recipe = await parseRecipeWithGitHubModels(text);
     return NextResponse.json({ data: recipe });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Parsing failed.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    if (error instanceof RecipeParserNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+
+    console.error("Recipe parsing failed.", error);
+    return NextResponse.json({ error: "Recipe parsing failed." }, { status: 502 });
   }
 }

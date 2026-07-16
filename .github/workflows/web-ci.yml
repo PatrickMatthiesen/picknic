@@ -1,18 +1,56 @@
-name: Web CI
+name: CI
 
 on:
   push:
     paths:
       - "web/**"
-      - ".github/workflows/web-ci.yml"
+      - "apphost/**"
+      - ".github/workflows/**"
+      - ".bun-version"
+      - "package.json"
+      - "aspire.config.json"
+      - "apphost.run.json"
+      - "README.md"
   pull_request:
     paths:
       - "web/**"
-      - ".github/workflows/web-ci.yml"
+      - "apphost/**"
+      - ".github/workflows/**"
+      - ".bun-version"
+      - "package.json"
+      - "aspire.config.json"
+      - "apphost.run.json"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  web-checks:
+  web:
+    name: Web and database
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: picknic
+          POSTGRES_PASSWORD: picknic-ci
+          POSTGRES_DB: picknic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U picknic -d picknic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://picknic:picknic-ci@localhost:5432/picknic?schema=public
 
     defaults:
       run:
@@ -30,10 +68,19 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Prisma generate
+      - name: Generate Prisma client
         run: bun run prisma:generate
 
-      - name: Run tests
+      - name: Validate Prisma schema
+        run: bunx prisma validate
+
+      - name: Apply migrations to a clean database
+        run: bunx prisma migrate deploy
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Test
         run: bun run test
 
       - name: Lint
@@ -41,3 +88,44 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Audit dependencies
+        run: bun audit --audit-level=high
+
+      - name: Diagnose WorkOS integration
+        env:
+          WORKOS_API_KEY: sk_test_ci_placeholder
+          WORKOS_CLIENT_ID: client_ci_placeholder
+          WORKOS_COOKIE_PASSWORD: ci-only-cookie-password-at-least-32-characters
+          NEXT_PUBLIC_WORKOS_REDIRECT_URI: http://localhost:5333/callback
+          WORKOS_REDIRECT_URI: http://localhost:5333/callback
+        run: bun run workos doctor --install-dir . --skip-ai --skip-api --json
+
+  apphost:
+    name: Aspire AppHost
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install matching Aspire daily CLI
+        run: >-
+          dotnet tool install Aspire.Cli
+          --tool-path .tools
+          --version 13.5.0-preview.1.26365.1
+          --configfile apphost/nuget.config
+
+      - name: Restore AppHost from mapped feeds
+        run: dotnet restore apphost/apphost.cs --configfile apphost/nuget.config
+
+      - name: Build AppHost
+        run: dotnet build apphost/apphost.cs --no-restore -p:NoWarn=ASPIREJAVASCRIPT001
+
+      - name: Diagnose Aspire environment
+        run: .tools/aspire doctor --non-interactive

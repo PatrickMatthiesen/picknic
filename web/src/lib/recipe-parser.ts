@@ -13,6 +13,13 @@ export type ParsedRecipeDraft = {
   steps: string[];
 };
 
+export class RecipeParserNotConfiguredError extends Error {
+  constructor() {
+    super("AI recipe import is not configured for this environment.");
+    this.name = "RecipeParserNotConfiguredError";
+  }
+}
+
 function extractJson(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -73,7 +80,7 @@ function resolveBaseUrl(endpoint: string): string {
 export async function parseRecipeWithGitHubModels(rawText: string): Promise<ParsedRecipeDraft> {
   const apiKey = process.env.GITHUB_MODELS_API_KEY ?? process.env.GITHUB_TOKEN;
   if (!apiKey) {
-    throw new Error("GITHUB_MODELS_API_KEY (or GITHUB_TOKEN) is required to use recipe parsing.");
+    throw new RecipeParserNotConfiguredError();
   }
 
   const endpoint = process.env.GITHUB_MODELS_ENDPOINT ?? "https://models.github.ai/inference";

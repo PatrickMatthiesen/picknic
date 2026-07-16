@@ -36,26 +36,29 @@ enum ShoppingItemStatus {
 }
 
 model User {
-  id              String            @id @default(cuid())
-  workosUserId    String            @unique
-  email           String            @unique
-  displayName     String?
-  households      HouseholdMember[]
-  mealPlans       MealPlan[]
-  pantryItems     PantryItem[]
-  recipes         Recipe[]
-  shoppingLists   ShoppingList[]
-  ownedHouseholds Household[]       @relation("HouseholdOwner")
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                String            @id @default(cuid())
+  workosUserId      String            @unique
+  email             String            @unique
+  displayName       String?
+  households        HouseholdMember[]
+  mealPlans         MealPlan[]
+  pantryItems       PantryItem[]
+  recipes           Recipe[]
+  shoppingLists     ShoppingList[]
+  ownedHouseholds   Household[]       @relation("HouseholdOwner")
+  personalHousehold Household?        @relation("PersonalHousehold")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }
 
 model Household {
   id                   String            @id @default(cuid())
   name                 String
   workosOrganizationId String?           @unique
+  personalForUserId    String?           @unique
   ownerId              String
   owner                User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  personalForUser      User?             @relation("PersonalHousehold", fields: [personalForUserId], references: [id], onDelete: Restrict)
   members              HouseholdMember[]
   mealPlans            MealPlan[]
   pantryItems          PantryItem[]
