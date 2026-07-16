@@ -29,6 +29,7 @@ var picknicdb = postgres.AddDatabase("picknicdb");
 #pragma warning disable ASPIREJAVASCRIPT001
 var web = builder.AddNextJsApp("web", "../web", "dev:aspire")
     .WithHttpEndpoint(port: 5333, env: "PORT")
+    .WithHttpHealthCheck("/", endpointName: "http")
     .WithBun()
     .WithExternalHttpEndpoints()
     .WithReference(picknicdb)
