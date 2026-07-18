@@ -2,29 +2,14 @@
 
 Picknic is a household meal-planning app for recipes, weekly meal plans, pantry inventory, and generated shopping lists. The development environment is orchestrated by Aspire and runs the Next.js app with PostgreSQL.
 
-## Prerequisites
+## Development Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) or another running Docker-compatible engine
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Bun 1.3.7](https://bun.sh/)
 - [Node.js 22.11 or newer](https://nodejs.org/) for the pinned WorkOS CLI
-- The Aspire CLI from the same `13.5.0-preview.1` daily family used at the top of `apphost/apphost.cs`
+- The Aspire CLI using the daily package feed.
 - Network access to WorkOS for local authentication
-
-The AppHost deliberately consumes Aspire daily packages from the scoped engineering feed in `apphost/nuget.config`. Do not remove that feed or replace the preview versions with stable packages as an incidental cleanup. Install the matching daily CLI from that feed:
-
-```powershell
-dotnet tool install --global Aspire.Cli --version 13.5.0-preview.1.26365.1 --configfile apphost/nuget.config
-```
-
-If Aspire is already installed as a global .NET tool, use `dotnet tool update` with the same version and config-file arguments instead.
-
-Check the local Aspire installation before starting:
-
-```powershell
-aspire --version
-aspire doctor --non-interactive
-```
 
 ## First-time setup
 
@@ -41,27 +26,25 @@ bun run --cwd web workos install --install-dir . --redirect-uri http://localhost
 bun run --cwd web workos doctor --install-dir . --skip-ai
 ```
 
-The installer configures `http://localhost:5333`, including the `/callback` redirect, and writes local credentials to the ignored `web/.env.local`. Run it only when that file is absent; existing credentials are developer-owned. The doctor command validates the environment afterward. Development uses real AuthKit sessions; there is no separate local login endpoint or authentication bypass.
-
-The first setup may update integration files, so review `git diff` afterward. Picknic authorization currently uses the local Prisma household model, so development setup does not seed unused WorkOS roles, permissions, or organizations.
+The installer configures `http://localhost:5333`, including the `/callback` redirect, and writes local credentials to the ignored `web/.env.local`.
 
 ## Run the app
 
 Start Docker first, then run:
 
 ```powershell
-bun run dev
+aspire start
 ```
 
-Aspire starts PostgreSQL and the web app. Open <http://localhost:5333>, sign in through AuthKit, and continue to the authenticated app at `/recipes`.
+Aspire starts PostgreSQL and the web app. Open <http://localhost:5333>, sign in through AuthKit.
 
 Stop the environment cleanly with:
 
 ```powershell
-bun run stop
+aspire stop
 ```
 
-PostgreSQL uses the named Docker volume `picknic-postgres`, so stopping Aspire does not delete development data. The repository does not contain PostgreSQL data files.
+PostgreSQL uses the named Docker volume `picknic-postgres`, so stopping Aspire does not delete development data.
 
 ## Optional AI recipe import
 
