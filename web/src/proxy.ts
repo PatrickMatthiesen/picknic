@@ -11,7 +11,7 @@ export function isUnauthenticatedApiRequest(request: NextRequest, user: unknown)
   return request.nextUrl.pathname.startsWith("/api/") && !user;
 }
 
-const protectedPagePrefixes = ["/recipes", "/planner", "/shopping-list", "/pantry", "/profile"];
+const protectedPagePrefixes = ["/recipes", "/planner", "/cook", "/shopping-list", "/pantry", "/profile"];
 
 export function isUnauthenticatedProtectedPage(request: NextRequest, user: unknown): boolean {
   return (
@@ -51,6 +51,7 @@ export const config = {
     "/api/:path*",
     "/recipes/:path*",
     "/planner/:path*",
+    "/cook/:path*",
     "/shopping-list/:path*",
     "/pantry/:path*",
     "/profile/:path*",

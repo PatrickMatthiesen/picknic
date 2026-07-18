@@ -19,9 +19,16 @@ enum MembershipRole {
 
 enum MealType {
   BREAKFAST
+  BRUNCH
   LUNCH
   DINNER
   SNACK
+  OTHER
+}
+
+enum RecipeVisibility {
+  PRIVATE
+  PUBLIC
 }
 
 enum ShoppingItemSource {
@@ -44,6 +51,8 @@ model User {
   mealPlans         MealPlan[]
   pantryItems       PantryItem[]
   recipes           Recipe[]
+  savedRecipes      SavedRecipe[]
+  recipeCollections RecipeCollection[]
   shoppingLists     ShoppingList[]
   ownedHouseholds   Household[]       @relation("HouseholdOwner")
   personalHousehold Household?        @relation("PersonalHousehold")
@@ -89,10 +98,15 @@ model Recipe {
   description String?
   servings    Int                @default(1)
   tags        String[]           @default([])
+  imageUrl    String?
+  visibility  RecipeVisibility   @default(PRIVATE)
+  publishedAt DateTime?
   household   Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
   createdBy   User               @relation(fields: [createdById], references: [id], onDelete: Restrict)
   ingredients RecipeIngredient[]
   steps       RecipeStep[]
+  saves       SavedRecipe[]
+  collectionItems RecipeCollectionItem[]
   plannedIn   MealPlanEntry[]
   listItems   ShoppingListItem[]
   createdAt   DateTime           @default(now())
@@ -105,12 +119,48 @@ model RecipeIngredient {
   name      String
   quantity  Decimal? @db.Decimal(10, 2)
   unit      String?
+  component String?
   position  Int
   recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([recipeId, position])
+}
+
+model SavedRecipe {
+  userId   String
+  recipeId String
+  savedAt  DateTime @default(now())
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe   Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, recipeId])
+  @@index([recipeId])
+}
+
+model RecipeCollection {
+  id        String                 @id @default(cuid())
+  userId    String
+  name      String
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     RecipeCollectionItem[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@unique([userId, name])
+}
+
+model RecipeCollectionItem {
+  collectionId String
+  recipeId     String
+  position     Int
+  collection   RecipeCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  recipe       Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, recipeId])
+  @@unique([collectionId, position])
+  @@index([recipeId])
 }
 
 model RecipeStep {

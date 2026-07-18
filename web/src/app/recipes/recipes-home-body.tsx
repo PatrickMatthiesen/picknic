@@ -1,153 +1,188 @@
+import { RecipeVisibility } from "@prisma/client";
+import { Bookmark, FolderPlus, Globe2, Plus, Search } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-context";
-import { prisma } from "@/lib/prisma";
-import { Dropdown } from "@/app/_components/dropdown";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
+import { prisma } from "@/lib/prisma";
+import { getRecipeImageUrl } from "@/lib/recipe-display";
 
 type RecipesHomeBodyProps = {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; view?: string; collection?: string }>;
   currentPath: "/recipes";
   searchActionPath: "/recipes";
 };
 
+const VIEWS = ["mine", "collections", "discover"] as const;
+type View = (typeof VIEWS)[number];
+
+function hrefFor(values: Record<string, string | undefined>) {
+  const params = new URLSearchParams();
+  Object.entries(values).forEach(([key, value]) => value && params.set(key, value));
+  return `/recipes${params.size ? `?${params}` : ""}`;
+}
+
 export async function RecipesHomeBody({ searchParams, currentPath, searchActionPath }: RecipesHomeBodyProps) {
   const { userId, organizationId } = await requireAppAuthContext();
-  const householdId = await resolveActiveHouseholdId(userId, organizationId);
-  const { q } = await searchParams;
-  const query = typeof q === "string" ? q.trim() : "";
+  const membership = await resolveActiveMembership(userId, organizationId);
+  if (!membership) return <main className="app-theme-page grid min-h-screen place-items-center p-6">No household is connected to this account.</main>;
 
-  if (!householdId) {
-    return (
-      <main className="app-theme-page px-6 py-12">
-        <section className="app-theme-card mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 rounded-3xl p-8">
-          <h1 className="text-3xl font-semibold tracking-tight">Recipes</h1>
-          <p className="app-theme-muted">
-            Your account is authenticated, but no household was found yet. Complete organization setup in WorkOS and sign
-            in again.
-          </p>
-          <Link className="app-theme-link w-fit rounded-full px-4 py-2 text-sm font-medium" href="/">
-            Back home
-          </Link>
-        </section>
-      </main>
-    );
+  const search = await searchParams;
+  const query = search.q?.trim() ?? "";
+  const view = VIEWS.includes(search.view as View) ? (search.view as View) : "mine";
+
+  async function createCollection(formData: FormData) {
+    "use server";
+    const name = String(formData.get("name") ?? "").trim();
+    if (!name) throw new Error("Enter a collection name.");
+    const context = await requireAppAuthContext();
+    await prisma.recipeCollection.upsert({
+      where: { userId_name: { userId: context.userId, name } },
+      update: {},
+      create: { userId: context.userId, name },
+    });
+    revalidatePath("/recipes");
+    redirect("/recipes?view=collections");
   }
 
-  const recipes = await prisma.recipe.findMany({
-    where: {
-      householdId,
-      ...(query
-        ? {
-            title: {
-              contains: query,
-              mode: "insensitive" as const,
-            },
-          }
-        : {}),
-    },
-    include: {
-      ingredients: { orderBy: { position: "asc" } },
-      steps: { orderBy: { position: "asc" } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+  async function toggleSavedRecipe(formData: FormData) {
+    "use server";
+    const recipeId = String(formData.get("recipeId") ?? "");
+    const returnTo = String(formData.get("returnTo") ?? "/recipes");
+    const context = await requireAppAuthContext();
+    const existing = await prisma.savedRecipe.findUnique({ where: { userId_recipeId: { userId: context.userId, recipeId } } });
+    if (existing) await prisma.savedRecipe.delete({ where: { userId_recipeId: { userId: context.userId, recipeId } } });
+    else await prisma.savedRecipe.create({ data: { userId: context.userId, recipeId } });
+    revalidatePath("/recipes");
+    redirect(returnTo);
+  }
+
+  async function addToCollection(formData: FormData) {
+    "use server";
+    const recipeId = String(formData.get("recipeId") ?? "");
+    const collectionId = String(formData.get("collectionId") ?? "");
+    const returnTo = String(formData.get("returnTo") ?? "/recipes");
+    const context = await requireAppAuthContext();
+    const collection = await prisma.recipeCollection.findFirst({ where: { id: collectionId, userId: context.userId }, select: { id: true, _count: { select: { items: true } } } });
+    if (!collection) throw new Error("Choose one of your collections.");
+    await prisma.recipeCollectionItem.upsert({
+      where: { collectionId_recipeId: { collectionId, recipeId } },
+      update: {},
+      create: { collectionId, recipeId, position: collection._count.items + 1 },
+    });
+    revalidatePath("/recipes");
+    redirect(returnTo);
+  }
+
+  const [collections, recipes] = await Promise.all([
+    prisma.recipeCollection.findMany({
+      where: { userId },
+      include: { _count: { select: { items: true } } },
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.recipe.findMany({
+      where: {
+        ...(query ? { title: { contains: query, mode: "insensitive" } } : {}),
+        ...(view === "discover"
+          ? { visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
+          : view === "collections"
+            ? { collectionItems: { some: { collection: { userId, ...(search.collection ? { id: search.collection } : {}) } } } }
+            : { OR: [{ householdId: membership.householdId }, { saves: { some: { userId } } }] }),
+      },
+      include: {
+        ingredients: { select: { id: true } },
+        steps: { select: { id: true } },
+        saves: { where: { userId }, select: { userId: true } },
+        collectionItems: { where: { collection: { userId } }, select: { collectionId: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+  ]);
+  const returnTo = hrefFor({ view, q: query || undefined, collection: search.collection });
 
   return (
     <AppPageShell
       currentPath={currentPath}
-      title="Browse, create, and parse recipes."
-      subtitle="Your personal recipe collection, accessible and editable by everyone in your household."
+      title="Recipes"
+      subtitle="Keep the recipes you love, improve them over time, and find something new for this week."
+      headerChildren={<Link className="app-theme-primary-button inline-flex items-center gap-2 px-4 py-2 text-sm" href="/recipes/new"><Plus size={17} /> Create recipe</Link>}
     >
-      <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-2 text-sm">
-            <Link className="app-theme-primary-button rounded-full px-4 py-2 font-medium" href="/recipes/new">
-              New recipe
-            </Link>
-            <Dropdown
-              autoCloseOnOutsideClick
-              className="relative"
-              label="Parse recipe"
-              panelClassName="app-theme-card absolute left-0 z-10 mt-2 w-64 rounded-2xl p-2"
-              summaryClassName="app-theme-secondary-button cursor-pointer list-none rounded-full px-4 py-2 font-medium"
-            >
-              <div className="flex flex-col gap-1 text-sm">
-                <Link
-                  className="app-theme-link app-dropdown-option rounded-xl px-3 py-2 font-medium"
-                  href="/recipes/new?method=copy-paste"
-                >
-                  🍝 Copy paste
-                </Link>
-                <Link
-                  className="app-theme-link app-dropdown-option rounded-xl px-3 py-2 font-medium"
-                  href="/recipes/new?method=url"
-                >
-                  Add with URL (soon)
-                </Link>
-                <Link
-                  className="app-theme-link app-dropdown-option rounded-xl px-3 py-2 font-medium"
-                  href="/recipes/new?method=image"
-                >
-                  Add with image (soon)
-                </Link>
-              </div>
-            </Dropdown>
-          </div>
+      <div className="recipe-library-toolbar">
+        <nav className="recipe-library-tabs" aria-label="Recipe library views">
+          <Link className={view === "mine" ? "is-active" : undefined} href="/recipes">My recipes</Link>
+          <Link className={view === "collections" ? "is-active" : undefined} href="/recipes?view=collections">Collections</Link>
+          <Link className={view === "discover" ? "is-active" : undefined} href="/recipes?view=discover">Discover</Link>
+        </nav>
+        <form className="recipe-search" action={searchActionPath} method="get">
+          {view !== "mine" ? <input name="view" type="hidden" value={view} /> : null}
+          <Search aria-hidden="true" size={17} />
+          <input defaultValue={query} name="q" placeholder="Search recipes" />
+        </form>
+      </div>
 
-          <form action={searchActionPath} method="get" className="w-full md:w-80">
-            <input
-              className="app-theme-input w-full rounded-full px-4 py-2 text-sm"
-              defaultValue={query}
-              name="q"
-              placeholder="Search recipes..."
-            />
+      {view === "collections" ? (
+        <section className="collection-strip">
+          <form action={createCollection}>
+            <FolderPlus aria-hidden="true" size={18} />
+            <input aria-label="Collection name" name="name" placeholder="New collection" />
+            <button type="submit">Create</button>
           </form>
-      </section>
-
-      {query ? (
-        <p className="app-theme-muted text-sm">
-          Showing results for &quot;<span className="font-semibold">{query}</span>&quot;
-        </p>
+          {collections.map((collection) => (
+            <Link className={search.collection === collection.id ? "is-active" : undefined} href={hrefFor({ view: "collections", collection: collection.id })} key={collection.id}>
+              <span>{collection.name}</span><small>{collection._count.items}</small>
+            </Link>
+          ))}
+        </section>
       ) : null}
 
-      <section className="space-y-3">
-          {recipes.length === 0 ? (
-            <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">
-              No recipes yet. Use New recipe or Parse recipe to get started.
-            </p>
-          ) : (
-            recipes.map((recipe) => (
-              <article className="app-theme-card rounded-3xl p-5" key={recipe.id}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold">{recipe.title}</h2>
-                    {recipe.description ? <p className="app-theme-muted mt-1 text-sm">{recipe.description}</p> : null}
-                    <p className="app-theme-muted mt-2 text-xs">
-                      {recipe.ingredients.length} ingredients · {recipe.steps.length} steps
-                    </p>
-                  </div>
-                  <Link className="app-theme-link rounded-full px-4 py-2 text-sm font-medium" href={`/recipes/${recipe.id}`}>
-                    Open recipe
-                  </Link>
-                </div>
-
-                {recipe.ingredients.length > 0 ? (
-                  <div className="mt-4">
-                    <p className="app-theme-muted text-xs font-medium uppercase tracking-wide">Preview ingredients</p>
-                    <ul className="app-theme-muted mt-1 list-inside list-disc text-sm">
-                      {recipe.ingredients.slice(0, 4).map((ingredient) => (
-                        <li key={ingredient.id}>
-                          {ingredient.quantity ? `${ingredient.quantity} ` : ""}
-                          {ingredient.unit ? `${ingredient.unit} ` : ""}
-                          {ingredient.name}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+      {recipes.length === 0 ? (
+        <section className="library-empty">
+          <BookOpenEmpty view={view} />
+        </section>
+      ) : (
+        <section className="recipe-library-grid">
+          {recipes.map((recipe) => (
+            <article className="library-recipe" key={recipe.id}>
+              <Link className="library-recipe-image" href={`/recipes/${recipe.id}`}>
+                <Image alt="" height={240} src={getRecipeImageUrl(recipe)} width={360} />
+                {recipe.visibility === RecipeVisibility.PUBLIC ? <span><Globe2 size={13} /> Public</span> : null}
+              </Link>
+              <div className="library-recipe-copy">
+                <Link className="recipe-title" href={`/recipes/${recipe.id}`}>{recipe.title}</Link>
+                <p>{recipe.ingredients.length} ingredients · {recipe.steps.length} steps · Serves {recipe.servings}</p>
+                {recipe.description ? <span>{recipe.description}</span> : null}
+              </div>
+              <div className="library-recipe-actions">
+                <Link className="app-theme-primary-button" href={`/planner?q=${encodeURIComponent(recipe.title)}`}>Plan</Link>
+                <form action={toggleSavedRecipe}>
+                  <input name="recipeId" type="hidden" value={recipe.id} />
+                  <input name="returnTo" type="hidden" value={returnTo} />
+                  <button aria-label={recipe.saves.length ? `Unsave ${recipe.title}` : `Save ${recipe.title}`} className={recipe.saves.length ? "is-saved" : undefined} type="submit"><Bookmark fill={recipe.saves.length ? "currentColor" : "none"} size={17} /></button>
+                </form>
+                {collections.length ? (
+                  <form action={addToCollection} className="collection-add-form">
+                    <input name="recipeId" type="hidden" value={recipe.id} />
+                    <input name="returnTo" type="hidden" value={returnTo} />
+                    <select aria-label={`Add ${recipe.title} to collection`} name="collectionId" defaultValue=""><option disabled value="">Collection</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}</select>
+                    <button type="submit">Add</button>
+                  </form>
                 ) : null}
-              </article>
-            ))
-          )}
-      </section>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
     </AppPageShell>
   );
+}
+
+function BookOpenEmpty({ view }: { view: View }) {
+  const content = view === "discover"
+    ? { title: "No public recipes found", body: "Try a broader search or publish one of your household recipes." }
+    : view === "collections"
+      ? { title: "This collection is ready", body: "Add recipes from My recipes or Discover when they are useful together." }
+      : { title: "Start with tonight", body: "Create a recipe manually or paste one you already use." };
+  return <><Bookmark aria-hidden="true" size={24} /><h2>{content.title}</h2><p>{content.body}</p><Link className="app-theme-primary-button px-4 py-2 text-sm" href="/recipes/new">Create recipe</Link></>;
 }

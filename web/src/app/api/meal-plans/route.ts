@@ -1,4 +1,4 @@
-import { MealType } from "@prisma/client";
+import { MealType, RecipeVisibility } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { getWeekStartUtc, toUtcDate } from "@/lib/meal-plan";
@@ -111,13 +111,16 @@ export async function POST(request: Request) {
 
   const recipeIds = Array.from(new Set(entries.map((entry) => entry.recipeId)));
   const recipes = await prisma.recipe.findMany({
-    where: { id: { in: recipeIds }, householdId: membership.householdId },
+    where: {
+      id: { in: recipeIds },
+      OR: [{ householdId: membership.householdId }, { visibility: RecipeVisibility.PUBLIC }],
+    },
     select: { id: true },
   });
   const validRecipeIds = new Set(recipes.map((recipe) => recipe.id));
 
   if (validRecipeIds.size !== recipeIds.length) {
-    return NextResponse.json({ error: "One or more recipes do not belong to the active household." }, { status: 400 });
+    return NextResponse.json({ error: "One or more recipes are not available to the active household." }, { status: 400 });
   }
 
   const mealPlan = await prisma.mealPlan.upsert({

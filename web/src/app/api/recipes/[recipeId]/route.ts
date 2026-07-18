@@ -1,4 +1,4 @@
-import { MembershipRole } from "@prisma/client";
+import { MembershipRole, RecipeVisibility } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
@@ -12,12 +12,15 @@ type RecipeUpdatePayload = {
   tags?: unknown;
   ingredients?: unknown;
   steps?: unknown;
+  imageUrl?: unknown;
+  visibility?: unknown;
 };
 
 type IngredientPayload = {
   name?: unknown;
   quantity?: unknown;
   unit?: unknown;
+  component?: unknown;
 };
 
 function normalizeTags(input: unknown): string[] {
@@ -48,6 +51,7 @@ function normalizeIngredients(input: unknown) {
         name: typeof ingredient.name === "string" ? ingredient.name.trim() : "",
         quantity: Number.isFinite(quantity) ? quantity : null,
         unit: typeof ingredient.unit === "string" && ingredient.unit.trim().length > 0 ? ingredient.unit.trim() : null,
+        component: typeof ingredient.component === "string" && ingredient.component.trim() ? ingredient.component.trim() : null,
         position: index + 1,
       };
     })
@@ -78,7 +82,7 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const recipe = await prisma.recipe.findFirst({
-    where: { id: recipeId, householdId: membership.householdId },
+    where: { id: recipeId, OR: [{ householdId: membership.householdId }, { visibility: RecipeVisibility.PUBLIC }] },
     include: {
       ingredients: { orderBy: { position: "asc" } },
       steps: { orderBy: { position: "asc" } },
@@ -119,6 +123,17 @@ export async function PATCH(request: Request, context: RouteContext) {
         description: typeof payload.description === "string" ? payload.description.trim() : undefined,
         servings: typeof payload.servings === "number" && payload.servings > 0 ? Math.floor(payload.servings) : undefined,
         tags: Array.isArray(payload.tags) ? normalizeTags(payload.tags) : undefined,
+        imageUrl: typeof payload.imageUrl === "string" ? payload.imageUrl.trim() || null : undefined,
+        visibility:
+          payload.visibility === RecipeVisibility.PUBLIC || payload.visibility === RecipeVisibility.PRIVATE
+            ? payload.visibility
+            : undefined,
+        publishedAt:
+          payload.visibility === RecipeVisibility.PUBLIC
+            ? new Date()
+            : payload.visibility === RecipeVisibility.PRIVATE
+              ? null
+              : undefined,
       },
     });
 

@@ -28,7 +28,6 @@ export default async function NewRecipePage() {
     <AppPageShell
       currentPath="/recipes"
       title="Create recipe"
-      subtitle="Start manually, parse from copy paste, or choose upcoming URL/image import options."
       maxWidthClassName="max-w-5xl"
       headerChildren={
         <div className="flex flex-wrap gap-2 text-sm">

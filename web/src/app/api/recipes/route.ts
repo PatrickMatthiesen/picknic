@@ -1,3 +1,4 @@
+import { RecipeVisibility } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
@@ -9,12 +10,15 @@ type RecipePayload = {
   tags?: unknown;
   ingredients?: unknown;
   steps?: unknown;
+  imageUrl?: unknown;
+  visibility?: unknown;
 };
 
 type IngredientPayload = {
   name?: unknown;
   quantity?: unknown;
   unit?: unknown;
+  component?: unknown;
 };
 
 function normalizeTags(input: unknown): string[] {
@@ -45,6 +49,7 @@ function normalizeIngredients(input: unknown) {
         name: typeof ingredient.name === "string" ? ingredient.name.trim() : "",
         quantity: Number.isFinite(quantity) ? quantity : null,
         unit: typeof ingredient.unit === "string" && ingredient.unit.trim().length > 0 ? ingredient.unit.trim() : null,
+        component: typeof ingredient.component === "string" && ingredient.component.trim() ? ingredient.component.trim() : null,
         position: index + 1,
       };
     })
@@ -65,7 +70,7 @@ function normalizeSteps(input: unknown) {
     .filter((step) => step.instruction.length > 0);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const { userId, organizationId } = await requireAppAuthContext();
   const membership = await resolveActiveMembership(userId, organizationId);
 
@@ -73,8 +78,18 @@ export async function GET() {
     return NextResponse.json({ error: "No household found for this user." }, { status: 400 });
   }
 
+  const url = new URL(request.url);
+  const view = url.searchParams.get("view") ?? "mine";
+  const query = url.searchParams.get("q")?.trim() ?? "";
   const recipes = await prisma.recipe.findMany({
-    where: { householdId: membership.householdId },
+    where: {
+      ...(query ? { title: { contains: query, mode: "insensitive" } } : {}),
+      ...(view === "discover"
+        ? { visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
+        : view === "saved"
+          ? { saves: { some: { userId } } }
+          : { householdId: membership.householdId }),
+    },
     include: {
       ingredients: { orderBy: { position: "asc" } },
       steps: { orderBy: { position: "asc" } },
@@ -108,6 +123,9 @@ export async function POST(request: Request) {
       description: typeof payload.description === "string" ? payload.description.trim() : null,
       servings: typeof payload.servings === "number" && payload.servings > 0 ? Math.floor(payload.servings) : 1,
       tags: normalizeTags(payload.tags),
+      imageUrl: typeof payload.imageUrl === "string" && payload.imageUrl.trim() ? payload.imageUrl.trim() : null,
+      visibility: payload.visibility === RecipeVisibility.PUBLIC ? RecipeVisibility.PUBLIC : RecipeVisibility.PRIVATE,
+      publishedAt: payload.visibility === RecipeVisibility.PUBLIC ? new Date() : null,
       ingredients: {
         create: normalizeIngredients(payload.ingredients),
       },

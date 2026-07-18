@@ -6,9 +6,15 @@ import {
   unauthorizedApiResponse,
 } from "@/proxy";
 
+const TEST_APP_ORIGIN = process.env.PICKNIC_TEST_APP_ORIGIN ?? "https://picknic.test";
+
+function appRequest(path: string) {
+  return new NextRequest(new URL(path, TEST_APP_ORIGIN));
+}
+
 describe("AuthKit proxy authorization boundary", () => {
   test("identifies an unauthenticated API request and builds a JSON 401", async () => {
-    const request = new NextRequest("http://localhost:5333/api/recipes");
+    const request = appRequest("/api/recipes");
     const response = unauthorizedApiResponse();
 
     expect(isUnauthenticatedApiRequest(request, null)).toBe(true);
@@ -19,12 +25,12 @@ describe("AuthKit proxy authorization boundary", () => {
   test("does not classify pages or authenticated APIs as unauthorized API requests", () => {
     expect(
       isUnauthenticatedApiRequest(
-        new NextRequest("http://localhost:5333/recipes?tag=dinner"),
+        appRequest("/recipes?tag=dinner"),
         null,
       ),
     ).toBe(false);
     expect(
-      isUnauthenticatedApiRequest(new NextRequest("http://localhost:5333/api/recipes"), {
+      isUnauthenticatedApiRequest(appRequest("/api/recipes"), {
         id: "user_workos",
       }),
     ).toBe(false);
@@ -33,17 +39,20 @@ describe("AuthKit proxy authorization boundary", () => {
   test("classifies protected pages without treating public or authenticated pages as protected", () => {
     expect(
       isUnauthenticatedProtectedPage(
-        new NextRequest("http://localhost:5333/recipes/new?from=planner"),
+        appRequest("/recipes/new?from=planner"),
         null,
       ),
     ).toBe(true);
     expect(
-      isUnauthenticatedProtectedPage(new NextRequest("http://localhost:5333/recipes"), {
+      isUnauthenticatedProtectedPage(appRequest("/recipes"), {
         id: "user_workos",
       }),
     ).toBe(false);
     expect(
-      isUnauthenticatedProtectedPage(new NextRequest("http://localhost:5333/"), null),
+      isUnauthenticatedProtectedPage(appRequest("/cook?date=2026-07-18"), null),
+    ).toBe(true);
+    expect(
+      isUnauthenticatedProtectedPage(appRequest("/"), null),
     ).toBe(false);
   });
 });
