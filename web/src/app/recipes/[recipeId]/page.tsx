@@ -1,14 +1,16 @@
 import { RecipeVisibility } from "@prisma/client";
-import { Bookmark, CalendarPlus, Globe2, Pencil, Users } from "lucide-react";
+import { BellRing, Bookmark, CalendarPlus, Clock3, Globe2, Pencil, Users } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { RecipeIngredientsClient } from "@/app/recipes/[recipeId]/recipe-ingredients-client";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { groupIngredientsByComponent } from "@/lib/ingredients";
 import { prisma } from "@/lib/prisma";
 import { getRecipeImageUrl } from "@/lib/recipe-display";
+import { groupRecipeSteps } from "@/lib/recipe-steps";
 
 type PageProps = { params: Promise<{ recipeId: string }> };
 
@@ -33,6 +35,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   if (!recipe) notFound();
   const ownsRecipe = recipe.householdId === membership.householdId;
   const ingredientGroups = groupIngredientsByComponent(recipe.ingredients);
+  const stepGroups = groupRecipeSteps(recipe.steps);
 
   async function toggleSave() {
     "use server";
@@ -83,7 +86,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       <section className="recipe-detail-hero">
         <Image alt="" height={360} priority src={getRecipeImageUrl(recipe)} width={720} />
         <div>
-          <dl><div><dt>Servings</dt><dd>{recipe.servings}</dd></div><div><dt>Ingredients</dt><dd>{recipe.ingredients.length}</dd></div><div><dt>Steps</dt><dd>{recipe.steps.length}</dd></div></dl>
+          <dl><div><dt>Servings</dt><dd>{recipe.servings}</dd></div><div><dt>Ingredients</dt><dd>{recipe.ingredients.length}</dd></div><div><dt>Steps</dt><dd>{recipe.steps.length}</dd></div>{recipe.totalTimeMinutes ? <div><dt>Total time</dt><dd>{recipe.totalTimeMinutes} min</dd></div> : null}</dl>
           <div className="recipe-detail-tags">{recipe.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
           <div className="recipe-detail-management">
             {ownsRecipe ? <form action={togglePublic}><button className="app-theme-secondary-button" type="submit"><Globe2 size={16} />{recipe.visibility === RecipeVisibility.PUBLIC ? "Make household-only" : "Make public"}</button></form> : <p><Users size={16} /> Shared by another cook</p>}
@@ -93,17 +96,22 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       </section>
 
       <div className="recipe-detail-body">
-        <aside>
-          <h2>Ingredients</h2>
-          {ingredientGroups.map((group) => (
-            <section key={group.component}>
-              {ingredientGroups.length > 1 ? <h3>{group.component}</h3> : null}
-              <ul>{group.ingredients.map((ingredient) => <li key={ingredient.id}><span>{ingredient.name}</span><strong>{ingredient.quantity ? `${ingredient.quantity} ` : ""}{ingredient.unit ?? ""}</strong></li>)}</ul>
-            </section>
-          ))}
-        </aside>
+        <RecipeIngredientsClient groups={ingredientGroups.map((group) => ({
+          component: group.component,
+          ingredients: group.ingredients.map((ingredient) => ({
+            id: ingredient.id,
+            name: ingredient.name,
+            notes: ingredient.notes,
+            quantity: ingredient.quantity == null ? null : Number(ingredient.quantity),
+            unit: ingredient.unit,
+            unitId: ingredient.unitId,
+          })),
+        }))} />
         <section className="recipe-instructions">
-          <ol>{recipe.steps.map((step) => <li key={step.id}><span>{step.position}</span><p>{step.instruction}</p></li>)}</ol>
+          {stepGroups.map((group) => <section className="recipe-step-component" key={group.component || "instructions"}>
+            {stepGroups.length > 1 || group.component ? <header><h3>{group.component || "Instructions"}</h3>{group.durationMinutes ? <span><Clock3 size={14} /> {group.durationMinutes} min</span> : null}</header> : null}
+            <ol>{group.steps.map((step) => <li key={step.id}><span>{step.position}</span><div><p>{step.instruction}</p>{step.advanceNotice || step.durationMinutes ? <small>{step.advanceNotice ? <span className="advance-notice"><BellRing size={14} /> Advance notice</span> : null}{step.durationMinutes ? <span><Clock3 size={14} /> {step.durationMinutes} min</span> : null}</small> : null}</div></li>)}</ol>
+          </section>)}
         </section>
       </div>
     </AppPageShell>

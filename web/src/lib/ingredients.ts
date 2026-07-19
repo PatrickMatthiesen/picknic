@@ -1,7 +1,10 @@
+import { getUnitById, resolveUnit } from "./units";
+
 export type IngredientLike = {
   name: string;
   quantity: unknown;
   unit: string | null;
+  unitId?: string | null;
   component?: string | null;
 };
 
@@ -14,6 +17,7 @@ export type AggregatedIngredient = {
   name: string;
   quantity: number | null;
   unit: string | null;
+  unitId: string | null;
 };
 
 function roundToTwo(value: number): number {
@@ -48,8 +52,10 @@ export function aggregateIngredients(
       continue;
     }
 
-    const unit = ingredient.unit?.trim() || null;
-    const key = `${name.toLocaleLowerCase()}::${unit?.toLocaleLowerCase() ?? ""}`;
+    const definition = getUnitById(ingredient.unitId) ?? resolveUnit(ingredient.unit);
+    const unit = definition?.symbol ?? ingredient.unit?.trim() ?? null;
+    const unitId = definition?.id ?? null;
+    const key = `${name.toLocaleLowerCase()}::${unitId ?? unit?.toLocaleLowerCase() ?? ""}`;
     const numericQuantity = ingredient.quantity == null ? null : Number(ingredient.quantity);
     const quantity = numericQuantity !== null && Number.isFinite(numericQuantity)
       ? roundToTwo(numericQuantity * multiplier)
@@ -57,7 +63,7 @@ export function aggregateIngredients(
     const existing = totals.get(key);
 
     if (!existing) {
-      totals.set(key, { name, quantity, unit });
+      totals.set(key, { name, quantity, unit, unitId });
     } else if (existing.quantity === null || quantity === null) {
       existing.quantity = null;
     } else {

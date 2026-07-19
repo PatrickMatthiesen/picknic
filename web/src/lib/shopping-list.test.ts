@@ -33,6 +33,27 @@ describe("buildAutoShoppingItems", () => {
       { ingredientName: "Salt", quantity: 3, source: "AUTO", status: "PENDING", unit: "tsp" },
     ]);
   });
+
+  test("combines common unit aliases", () => {
+    expect(buildAutoShoppingItems({
+      entries: [{
+        servingsOverride: null,
+        recipe: {
+          servings: 1,
+          ingredients: [
+            { name: "Oil", quantity: 1, unit: "tbs" },
+            { name: "Oil", quantity: 2, unit: "tablespoons" },
+          ],
+        },
+      }],
+    })).toEqual([{
+      ingredientName: "Oil",
+      quantity: 3,
+      source: "AUTO",
+      status: "PENDING",
+      unit: "tbsp",
+    }]);
+  });
 });
 
 describe("subtractPantryFromShoppingItems", () => {

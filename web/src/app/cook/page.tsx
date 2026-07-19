@@ -35,8 +35,8 @@ export default async function CookPage({ searchParams }: PageProps) {
           id: selected.recipe.id,
           title: selected.recipe.title,
           servings: selected.recipe.servings,
-          ingredients: selected.recipe.ingredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, quantity: ingredient.quantity == null ? null : Number(ingredient.quantity), unit: ingredient.unit, component: ingredient.component })),
-          steps: selected.recipe.steps.map((step) => ({ id: step.id, position: step.position, instruction: step.instruction })),
+          ingredients: selected.recipe.ingredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, quantity: ingredient.quantity == null ? null : Number(ingredient.quantity), unit: ingredient.unit, unitId: ingredient.unitId, component: ingredient.component })),
+          steps: selected.recipe.steps.map((step) => ({ id: step.id, position: step.position, instruction: step.instruction, component: step.component, durationMinutes: step.durationMinutes, advanceNotice: step.advanceNotice })),
         }}
         servingsOverride={selected.servingsOverride}
       />

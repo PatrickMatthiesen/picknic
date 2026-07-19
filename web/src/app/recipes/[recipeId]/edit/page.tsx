@@ -1,6 +1,6 @@
 import { RecipeVisibility } from "@prisma/client";
 import { notFound } from "next/navigation";
-import { AppPageShell } from "@/app/_components/page-shell";
+import { AppNav } from "@/app/_components/app-nav";
 import { RecipeEditorClient, type RecipeDraft } from "@/app/recipes/new/recipe-editor-client";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
@@ -14,15 +14,45 @@ export default async function EditRecipePage({ params }: PageProps) {
   if (!membership) notFound();
   const recipe = await prisma.recipe.findFirst({ where: { id: recipeId, householdId: membership.householdId }, include: { ingredients: { orderBy: { position: "asc" } }, steps: { orderBy: { position: "asc" } } } });
   if (!recipe) notFound();
+  const ingredientComponents: RecipeDraft["ingredientComponents"] = [];
+  for (const ingredient of recipe.ingredients) {
+    const name = ingredient.component ?? "";
+    let component = ingredientComponents.find((item) => item.name === name);
+    if (!component) {
+      component = { id: `ingredient-component-${ingredientComponents.length + 1}`, name, ingredients: [] };
+      ingredientComponents.push(component);
+    }
+    component.ingredients.push({
+      id: ingredient.id,
+      name: ingredient.name,
+      quantity: ingredient.quantity == null ? null : Number(ingredient.quantity),
+      unit: ingredient.unit,
+      unitId: ingredient.unitId,
+      notes: ingredient.notes ?? "",
+    });
+  }
+
+  const instructionComponents: RecipeDraft["instructionComponents"] = [];
+  for (const step of recipe.steps) {
+    const name = step.component ?? "";
+    let component = instructionComponents.find((item) => item.name === name);
+    if (!component) {
+      component = { id: `instruction-component-${instructionComponents.length + 1}`, name, steps: [] };
+      instructionComponents.push(component);
+    }
+    component.steps.push({ id: step.id, instruction: step.instruction, durationMinutes: step.durationMinutes, advanceNotice: step.advanceNotice });
+  }
+
   const draft: RecipeDraft = {
     title: recipe.title,
     description: recipe.description ?? "",
     servings: recipe.servings,
+    totalTimeMinutes: recipe.totalTimeMinutes,
     tags: recipe.tags,
     imageUrl: recipe.imageUrl ?? "",
     visibility: recipe.visibility ?? RecipeVisibility.PRIVATE,
-    ingredients: recipe.ingredients.map((ingredient) => ({ name: ingredient.name, quantity: ingredient.quantity == null ? null : Number(ingredient.quantity), unit: ingredient.unit, component: ingredient.component })),
-    steps: recipe.steps.map((step) => step.instruction),
+    ingredientComponents: ingredientComponents.length ? ingredientComponents : [{ id: "ingredient-component-initial", name: "", ingredients: [] }],
+    instructionComponents: instructionComponents.length ? instructionComponents : [{ id: "instruction-component-initial", name: "", steps: [] }],
   };
-  return <AppPageShell currentPath="/recipes" title="Edit recipe" subtitle="Keep the version your household actually cooks." maxWidthClassName="max-w-5xl"><RecipeEditorClient initialDraft={draft} recipeId={recipeId} /></AppPageShell>;
+  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient initialDraft={draft} recipeId={recipeId} /></main>;
 }

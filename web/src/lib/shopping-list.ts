@@ -1,9 +1,11 @@
 import { ShoppingItemSource, ShoppingItemStatus } from "@prisma/client";
+import { getUnitById, resolveUnit } from "./units";
 
 type IngredientInput = {
   name: string;
   quantity: unknown;
   unit: string | null;
+  unitId?: string | null;
 };
 
 type MealPlanEntryInput = {
@@ -49,8 +51,9 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
         continue;
       }
 
-      const unit = ingredient.unit?.trim() || null;
-      const key = `${ingredientName.toLowerCase()}::${unit?.toLowerCase() ?? ""}`;
+      const definition = getUnitById(ingredient.unitId) ?? resolveUnit(ingredient.unit);
+      const unit = definition?.symbol ?? ingredient.unit?.trim() ?? null;
+      const key = `${ingredientName.toLowerCase()}::${definition?.id ?? unit?.toLowerCase() ?? ""}`;
       const numericQuantity =
         ingredient.quantity !== null && ingredient.quantity !== undefined ? Number(ingredient.quantity) : null;
       const scaledQuantity =
@@ -87,14 +90,15 @@ export function subtractPantryFromShoppingItems(
 
   for (const pantryItem of pantryItems) {
     const ingredientName = pantryItem.ingredientName.trim();
-    const unit = pantryItem.unit.trim();
+    const definition = resolveUnit(pantryItem.unit);
+    const unit = definition?.symbol ?? pantryItem.unit.trim();
     const quantity = Number(pantryItem.quantity);
 
     if (!ingredientName || !unit || !Number.isFinite(quantity) || quantity <= 0) {
       continue;
     }
 
-    const key = `${ingredientName.toLowerCase()}::${unit.toLowerCase()}`;
+    const key = `${ingredientName.toLowerCase()}::${definition?.id ?? unit.toLowerCase()}`;
     pantryTotals.set(key, roundToTwo((pantryTotals.get(key) ?? 0) + quantity));
   }
 
@@ -104,7 +108,8 @@ export function subtractPantryFromShoppingItems(
         return item;
       }
 
-      const key = `${item.ingredientName.toLowerCase()}::${item.unit.toLowerCase()}`;
+      const definition = resolveUnit(item.unit);
+      const key = `${item.ingredientName.toLowerCase()}::${definition?.id ?? item.unit.toLowerCase()}`;
       const pantryQuantity = pantryTotals.get(key) ?? 0;
 
       if (pantryQuantity <= 0) {

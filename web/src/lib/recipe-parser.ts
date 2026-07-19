@@ -5,6 +5,7 @@ export type ParsedRecipeDraft = {
   description: string;
   servings: number;
   tags: string[];
+  measurementSystem: "metric" | "us" | null;
   ingredients: Array<{
     name: string;
     quantity: number | null;
@@ -49,6 +50,9 @@ function normalizeDraft(value: unknown): ParsedRecipeDraft {
       .filter((tag): tag is string => typeof tag === "string")
       .map((tag) => tag.trim())
       .filter((tag) => tag.length > 0),
+    measurementSystem: record.measurementSystem === "metric" || record.measurementSystem === "us"
+      ? record.measurementSystem
+      : null,
     ingredients: ingredients
       .filter((ingredient): ingredient is Record<string, unknown> => typeof ingredient === "object" && ingredient !== null)
       .map((ingredient) => {
@@ -98,7 +102,7 @@ export async function parseRecipeWithGitHubModels(rawText: string): Promise<Pars
       {
         role: "system",
         content:
-          "You extract recipes into strict JSON with keys: title (string), description (string), servings (number), tags (string[]), ingredients ({name, quantity, unit}[]), steps (string[]). Return only JSON.",
+          "You extract recipes into strict JSON with keys: title (string), description (string), servings (number), tags (string[]), measurementSystem ('metric' | 'us' | null), ingredients ({name, quantity, unit}[]), steps (string[]). Preserve the recipe's written quantities and units. Return only JSON.",
       },
       {
         role: "user",

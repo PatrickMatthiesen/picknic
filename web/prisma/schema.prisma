@@ -97,6 +97,7 @@ model Recipe {
   title       String
   description String?
   servings    Int                @default(1)
+  totalTimeMinutes Int?
   tags        String[]           @default([])
   imageUrl    String?
   visibility  RecipeVisibility   @default(PRIVATE)
@@ -119,6 +120,8 @@ model RecipeIngredient {
   name      String
   quantity  Decimal? @db.Decimal(10, 2)
   unit      String?
+  unitId    String?
+  notes     String?
   component String?
   position  Int
   recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
@@ -164,13 +167,16 @@ model RecipeCollectionItem {
 }
 
 model RecipeStep {
-  id          String   @id @default(cuid())
-  recipeId    String
-  instruction String
-  position    Int
-  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  recipeId        String
+  instruction     String
+  component       String?
+  durationMinutes Int?
+  advanceNotice   Boolean  @default(false)
+  position        Int
+  recipe          Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@unique([recipeId, position])
 }

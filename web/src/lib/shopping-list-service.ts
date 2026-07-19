@@ -48,7 +48,7 @@ export async function generateShoppingListForWeek({
             select: {
               servings: true,
               ingredients: {
-                select: { name: true, quantity: true, unit: true },
+                select: { name: true, quantity: true, unit: true, unitId: true },
               },
             },
           },
