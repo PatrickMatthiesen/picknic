@@ -286,8 +286,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .component-time { display: inline-flex; min-height: 32px; align-items: center; gap: var(--space-1); color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 .step-editor-list { border-top: 1px solid var(--divider); }
 .step-editor-row { display: grid; min-width: 0; grid-template-columns: 2.5rem 2.5rem minmax(0, 1fr) auto; align-items: start; border-bottom: 1px solid var(--divider); }
+.step-editor-row > .row-drag-handle, .step-editor-row > .row-drag-placeholder { min-height: 44px; }
 .step-number { display: grid; min-height: 44px; place-items: center; color: var(--text-secondary); font-size: 0.875rem; font-variant-numeric: tabular-nums; }
-.step-editor-row > textarea { min-width: 0; min-height: 40px; overflow: hidden; border: 0; outline: 0; background: transparent; color: var(--ink); padding: var(--space-1) var(--space-2); font-size: 0.875rem; line-height: 1.45; resize: none; field-sizing: content; }
+.step-editor-row > textarea { min-width: 0; min-height: 44px; overflow: hidden; border: 0; outline: 0; background: transparent; color: var(--ink); padding: calc((44px - 1.45em) / 2) var(--space-2); font-size: 0.875rem; line-height: 1.45; resize: none; field-sizing: content; }
 .step-meta { display: flex; min-height: 44px; align-items: center; gap: var(--space-1); }
 .step-meta label { display: flex; min-height: 36px; align-items: center; gap: var(--space-1); color: var(--muted); }
 .step-meta input { width: 3.5rem; border: 0; outline: 0; background: transparent; color: var(--ink); padding: var(--space-1); font-size: 0.75rem; }
