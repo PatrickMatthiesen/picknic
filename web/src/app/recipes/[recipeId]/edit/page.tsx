@@ -12,14 +12,15 @@ export default async function EditRecipePage({ params }: PageProps) {
   const { userId, organizationId } = await requireAppAuthContext();
   const membership = await resolveActiveMembership(userId, organizationId);
   if (!membership) notFound();
-  const recipe = await prisma.recipe.findFirst({ where: { id: recipeId, householdId: membership.householdId }, include: { ingredients: { orderBy: { position: "asc" } }, steps: { orderBy: { position: "asc" } } } });
+  const recipe = await prisma.recipe.findFirst({ where: { id: recipeId, householdId: membership.householdId, deletedAt: null }, include: { ingredients: { orderBy: { position: "asc" } }, steps: { orderBy: { position: "asc" } } } });
   if (!recipe) notFound();
   const ingredientComponents: RecipeDraft["ingredientComponents"] = [];
   for (const ingredient of recipe.ingredients) {
     const name = ingredient.component ?? "";
-    let component = ingredientComponents.find((item) => item.name === name);
+    const componentId = ingredient.componentId ?? `legacy-ingredient:${name}`;
+    let component = ingredientComponents.find((item) => item.id === componentId);
     if (!component) {
-      component = { id: `ingredient-component-${ingredientComponents.length + 1}`, name, ingredients: [] };
+      component = { id: componentId, name, ingredients: [] };
       ingredientComponents.push(component);
     }
     component.ingredients.push({
@@ -35,9 +36,10 @@ export default async function EditRecipePage({ params }: PageProps) {
   const instructionComponents: RecipeDraft["instructionComponents"] = [];
   for (const step of recipe.steps) {
     const name = step.component ?? "";
-    let component = instructionComponents.find((item) => item.name === name);
+    const componentId = step.componentId ?? `legacy-instruction:${name}`;
+    let component = instructionComponents.find((item) => item.id === componentId);
     if (!component) {
-      component = { id: `instruction-component-${instructionComponents.length + 1}`, name, steps: [] };
+      component = { id: componentId, name, steps: [] };
       instructionComponents.push(component);
     }
     component.steps.push({ id: step.id, instruction: step.instruction, durationMinutes: step.durationMinutes, advanceNotice: step.advanceNotice });

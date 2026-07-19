@@ -1,13 +1,13 @@
 import { RecipeVisibility } from "@prisma/client";
 import { Bookmark, FolderPlus, Globe2, Plus, Search } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { RecipeImage } from "@/app/_components/recipe-image";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
-import { getRecipeImageUrl } from "@/lib/recipe-display";
+import { ensureRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
 type RecipesHomeBodyProps = {
   searchParams: Promise<{ q?: string; view?: string; collection?: string }>;
@@ -54,7 +54,21 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
     const context = await requireAppAuthContext();
     const existing = await prisma.savedRecipe.findUnique({ where: { userId_recipeId: { userId: context.userId, recipeId } } });
     if (existing) await prisma.savedRecipe.delete({ where: { userId_recipeId: { userId: context.userId, recipeId } } });
-    else await prisma.savedRecipe.create({ data: { userId: context.userId, recipeId } });
+    else {
+      const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+      if (!activeMembership) throw new Error("No household is connected to this account.");
+      const available = await prisma.recipe.findFirst({
+        where: {
+          id: recipeId,
+          deletedAt: null,
+          OR: [{ householdId: activeMembership.householdId }, { visibility: RecipeVisibility.PUBLIC }],
+        },
+        select: { id: true, createdById: true },
+      });
+      if (!available) throw new Error("This recipe cannot be saved.");
+      const revision = await ensureRecipeRevision(prisma, available.id, available.createdById);
+      await prisma.savedRecipe.create({ data: { userId: context.userId, recipeId, lastSeenRevisionId: revision.id } });
+    }
     revalidatePath("/recipes");
     redirect(returnTo);
   }
@@ -65,8 +79,35 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
     const collectionId = String(formData.get("collectionId") ?? "");
     const returnTo = String(formData.get("returnTo") ?? "/recipes");
     const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
     const collection = await prisma.recipeCollection.findFirst({ where: { id: collectionId, userId: context.userId }, select: { id: true, _count: { select: { items: true } } } });
     if (!collection) throw new Error("Choose one of your collections.");
+    const available = await prisma.recipe.findFirst({
+      where: {
+        id: recipeId,
+        OR: [
+          { householdId: activeMembership.householdId, deletedAt: null },
+          { visibility: RecipeVisibility.PUBLIC, deletedAt: null },
+          { saves: { some: { userId: context.userId } }, latestRevisionId: { not: null } },
+        ],
+      },
+      select: { id: true, createdById: true, householdId: true, latestRevisionId: true, visibility: true },
+    });
+    if (!available) throw new Error("This recipe cannot be added to a collection.");
+    if (available.householdId !== activeMembership.householdId) {
+      const revision = available.visibility === RecipeVisibility.PUBLIC
+        ? await ensureRecipeRevision(prisma, available.id, available.createdById)
+        : available.latestRevisionId
+          ? await prisma.recipeRevision.findUniqueOrThrow({ where: { id: available.latestRevisionId } })
+          : null;
+      if (!revision) throw new Error("The retained recipe version is no longer available.");
+      await prisma.savedRecipe.upsert({
+        where: { userId_recipeId: { userId: context.userId, recipeId } },
+        update: {},
+        create: { userId: context.userId, recipeId, lastSeenRevisionId: revision.id },
+      });
+    }
     await prisma.recipeCollectionItem.upsert({
       where: { collectionId_recipeId: { collectionId, recipeId } },
       update: {},
@@ -84,22 +125,46 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
     }),
     prisma.recipe.findMany({
       where: {
-        ...(query ? { title: { contains: query, mode: "insensitive" } } : {}),
+        ...(query && view === "discover" ? { title: { contains: query, mode: "insensitive" } } : {}),
         ...(view === "discover"
-          ? { visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
+          ? { deletedAt: null, visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
           : view === "collections"
             ? { collectionItems: { some: { collection: { userId, ...(search.collection ? { id: search.collection } : {}) } } } }
-            : { OR: [{ householdId: membership.householdId }, { saves: { some: { userId } } }] }),
+            : { OR: [{ householdId: membership.householdId, deletedAt: null }, { saves: { some: { userId } } }] }),
       },
       include: {
         ingredients: { select: { id: true } },
         steps: { select: { id: true } },
-        saves: { where: { userId }, select: { userId: true } },
+        saves: { where: { userId }, select: { userId: true, lastSeenRevisionId: true } },
         collectionItems: { where: { collection: { userId } }, select: { collectionId: true } },
       },
       orderBy: { updatedAt: "desc" },
+      take: 48,
     }),
   ]);
+  const retainedRevisionIds = recipes
+    .filter((recipe) => recipe.householdId !== membership.householdId && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt))
+    .map((recipe) => recipe.latestRevisionId)
+    .filter((id): id is string => id !== null);
+  const retainedRevisions = retainedRevisionIds.length
+    ? await prisma.recipeRevision.findMany({ where: { id: { in: retainedRevisionIds } } })
+    : [];
+  const retainedSnapshots = new Map(retainedRevisions.map((revision) => [revision.id, readRecipeSnapshot(revision.snapshot)]));
+  const displayRecipes = recipes.map((recipe) => {
+    const snapshot = recipe.latestRevisionId ? retainedSnapshots.get(recipe.latestRevisionId) : null;
+    return snapshot
+      ? {
+          ...recipe,
+          ...snapshot,
+          id: recipe.id,
+          ingredients: snapshot.ingredients.map(({ id }) => ({ id })),
+          steps: snapshot.steps.map(({ id }) => ({ id })),
+        }
+      : recipe;
+  });
+  const visibleRecipes = query
+    ? displayRecipes.filter((recipe) => recipe.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+    : displayRecipes;
   const returnTo = hrefFor({ view, q: query || undefined, collection: search.collection });
 
   return (
@@ -137,25 +202,28 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
         </section>
       ) : null}
 
-      {recipes.length === 0 ? (
+      {visibleRecipes.length === 0 ? (
         <section className="library-empty">
           <BookOpenEmpty view={view} />
         </section>
       ) : (
         <section className="recipe-library-grid">
-          {recipes.map((recipe) => (
+          {visibleRecipes.map((recipe) => (
             <article className="library-recipe" key={recipe.id}>
               <Link className="library-recipe-image" href={`/recipes/${recipe.id}`}>
-                <Image alt="" height={240} src={getRecipeImageUrl(recipe)} width={360} />
-                {recipe.visibility === RecipeVisibility.PUBLIC ? <span><Globe2 size={13} /> Public</span> : null}
+                <RecipeImage alt="" height={240} recipe={recipe} width={360} />
+                {recipe.deletedAt ? <span>Original removed</span> : recipe.visibility === RecipeVisibility.PUBLIC ? <span><Globe2 size={13} /> Public</span> : null}
               </Link>
               <div className="library-recipe-copy">
                 <Link className="recipe-title" href={`/recipes/${recipe.id}`}>{recipe.title}</Link>
                 <p>{recipe.ingredients.length} ingredients · {recipe.steps.length} steps · Serves {recipe.servings}</p>
+                {recipe.saves[0]?.lastSeenRevisionId && recipe.latestRevisionId !== recipe.saves[0].lastSeenRevisionId
+                  ? <small className="recipe-update-badge">Updated by author</small>
+                  : null}
                 {recipe.description ? <span>{recipe.description}</span> : null}
               </div>
               <div className="library-recipe-actions">
-                <Link className="app-theme-primary-button" href={`/planner?q=${encodeURIComponent(recipe.title)}`}>Plan</Link>
+                <Link className="app-theme-primary-button" href={`/planner?${recipe.householdId !== membership.householdId && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt) ? "view=saved&" : ""}q=${encodeURIComponent(recipe.title)}`}>Plan</Link>
                 <form action={toggleSavedRecipe}>
                   <input name="recipeId" type="hidden" value={recipe.id} />
                   <input name="returnTo" type="hidden" value={returnTo} />

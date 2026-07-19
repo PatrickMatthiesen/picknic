@@ -1,5 +1,6 @@
 import { ShoppingItemSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { readRecipeSnapshot } from "@/lib/recipe-revisions";
 import { buildAutoShoppingItems, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
 
 export async function getShoppingListForWeek(householdId: string, weekStart: Date) {
@@ -44,8 +45,10 @@ export async function generateShoppingListForWeek({
     include: {
       entries: {
         include: {
+          recipeRevision: true,
           recipe: {
             select: {
+              householdId: true,
               servings: true,
               ingredients: {
                 select: { name: true, quantity: true, unit: true, unitId: true },
@@ -63,10 +66,27 @@ export async function generateShoppingListForWeek({
 
   const pantryItems = await prisma.pantryItem.findMany({
     where: { householdId },
-    select: { ingredientName: true, unit: true, quantity: true },
+    select: { ingredientName: true, unit: true, unitId: true, quantity: true },
   });
 
-  const autoItems = subtractPantryFromShoppingItems(buildAutoShoppingItems(mealPlan), pantryItems);
+  const pinnedMealPlan = {
+    entries: mealPlan.entries.map((entry) => {
+      const snapshot = entry.recipeRevision ? readRecipeSnapshot(entry.recipeRevision.snapshot) : null;
+      if (!snapshot && entry.recipe.householdId !== householdId) {
+        throw new Error("A shared planned recipe is missing its pinned revision.");
+      }
+      return {
+        servingsOverride: entry.servingsOverride,
+        recipe: snapshot
+          ? {
+              servings: snapshot.servings,
+              ingredients: snapshot.ingredients,
+            }
+          : entry.recipe,
+      };
+    }),
+  };
+  const autoItems = subtractPantryFromShoppingItems(buildAutoShoppingItems(pinnedMealPlan), pantryItems);
   const shoppingList = await prisma.shoppingList.upsert({
     where: { mealPlanId: mealPlan.id },
     create: {
@@ -96,6 +116,7 @@ export async function generateShoppingListForWeek({
           ingredientName: item.ingredientName,
           quantity: item.quantity,
           unit: item.unit,
+          unitId: item.unitId,
           source: item.source,
           status: item.status,
         })),

@@ -5,6 +5,7 @@ import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-cont
 import { getWeekStartUtc } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { generateShoppingListForWeek, getShoppingListForWeek } from "@/lib/shopping-list-service";
+import { normalizeUnitInput } from "@/lib/units";
 import { AppPageShell } from "@/app/_components/page-shell";
 
 export default async function ShoppingListPage() {
@@ -129,13 +130,15 @@ export default async function ShoppingListPage() {
 
     const numericQuantity =
       typeof quantityValue === "string" && quantityValue.trim().length > 0 ? Number(quantityValue) : null;
+    const normalizedUnit = normalizeUnitInput(typeof unitValue === "string" ? unitValue : null);
 
     await prisma.shoppingListItem.create({
       data: {
         shoppingListId: shoppingList.id,
         ingredientName: ingredientName.trim(),
         quantity: numericQuantity !== null && Number.isFinite(numericQuantity) ? numericQuantity : null,
-        unit: typeof unitValue === "string" && unitValue.trim().length > 0 ? unitValue.trim() : null,
+        unit: normalizedUnit.unit,
+        unitId: normalizedUnit.unitId,
         source: ShoppingItemSource.MANUAL,
       },
     });

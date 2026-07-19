@@ -12,6 +12,7 @@ import {
   GripVertical,
   ImageIcon,
   Minus,
+  MoreHorizontal,
   Plus,
   Sparkles,
   Trash2,
@@ -23,6 +24,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { UnitCombobox } from "@/app/_components/unit-combobox";
+import { getSupportedRecipeImageUrl } from "@/lib/recipe-display";
+import { MAX_RECIPE_MINUTES } from "@/lib/recipe-input";
 import {
   inferMeasurementSystem,
   inferSourceMeasurementSystem,
@@ -163,16 +166,17 @@ type SortableEditorRowProps = {
   handleLabel: string;
   id: string;
   index: number;
+  disabled?: boolean;
 };
 
-function SortableEditorRow({ children, className, handleLabel, id, index }: SortableEditorRowProps) {
-  const { handleRef, isDragging, ref } = useSortable({ id, index });
+function SortableEditorRow({ children, className, disabled = false, handleLabel, id, index }: SortableEditorRowProps) {
+  const { handleRef, isDragging, ref } = useSortable({ disabled, id, index });
 
   return (
     <div className={`${className}${isDragging ? " is-dragging" : ""}`} ref={ref}>
-      <button aria-label={handleLabel} className="row-drag-handle" ref={handleRef} title={handleLabel} type="button">
-        <GripVertical aria-hidden="true" size={16} />
-      </button>
+      {disabled
+        ? <span className="row-drag-placeholder" />
+        : <button aria-label={handleLabel} className="row-drag-handle" ref={handleRef} title={handleLabel} type="button"><GripVertical aria-hidden="true" size={16} /></button>}
       {children}
     </div>
   );
@@ -197,11 +201,12 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
   const [error, setError] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [savedLocallyAt, setSavedLocallyAt] = useState<string | null>(null);
-  const [recoveredDraft, setRecoveredDraft] = useState<StoredDraft | null>(null);
+  const [restoredDraftAt, setRestoredDraftAt] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const [authoringSystem, setAuthoringSystem] = useState<MeasurementSystem>("metric");
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionsMenuRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     setAuthoringSystem(inferMeasurementSystem(navigator.language));
@@ -215,7 +220,10 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
         if (isStoredDraft(stored)) {
           setSavedLocallyAt(stored.updatedAt);
           if (JSON.stringify(meaningfulDraft(stored.draft)) !== JSON.stringify(meaningfulDraft(preparedInitialDraft))) {
-            setRecoveredDraft(stored);
+            const restored = prepareDraft(stored.draft);
+            setDraft(restored);
+            setTagsText(restored.tags.join(", "));
+            setRestoredDraftAt(stored.updatedAt);
           }
         }
       }
@@ -227,7 +235,12 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
   }, [preparedInitialDraft, storageKey]);
 
   useEffect(() => {
-    if (!draftReady || recoveredDraft) return;
+    if (!draftReady) return;
+    if (JSON.stringify(meaningfulDraft(draft)) === JSON.stringify(meaningfulDraft(preparedInitialDraft))) {
+      window.localStorage.removeItem(storageKey);
+      setSavedLocallyAt(null);
+      return;
+    }
     const timer = setTimeout(() => {
       const updatedAt = new Date().toISOString();
       try {
@@ -238,7 +251,7 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [draft, draftReady, recoveredDraft, storageKey]);
+  }, [draft, draftReady, preparedInitialDraft, storageKey]);
 
   useEffect(() => () => {
     if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -250,20 +263,19 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
     undoTimer.current = setTimeout(() => setUndo(null), 6000);
   }
 
-  function continueRecoveredDraft() {
-    if (!recoveredDraft) return;
-    const nextDraft = prepareDraft(recoveredDraft.draft);
-    setDraft(nextDraft);
-    setTagsText(nextDraft.tags.join(", "));
-    setRecoveredDraft(null);
-  }
-
-  function startOver() {
+  function clearRecipe() {
+    const previousDraft = draft;
+    const previousTags = tagsText;
     window.localStorage.removeItem(storageKey);
     setSavedLocallyAt(null);
-    setRecoveredDraft(null);
+    setRestoredDraftAt(null);
     setDraft(preparedInitialDraft);
     setTagsText(initialDraft.tags.join(", "));
+    actionsMenuRef.current?.removeAttribute("open");
+    showUndo(recipeId ? "Local changes discarded" : "Recipe cleared", () => {
+      setDraft(previousDraft);
+      setTagsText(previousTags);
+    });
   }
 
   async function parseRecipe() {
@@ -451,7 +463,7 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
     setIsSaving(true);
     const payload = {
       ...draft,
-      ingredients: draft.ingredientComponents.flatMap((component) => component.ingredients
+      ingredients: draft.ingredientComponents.flatMap((component, componentIndex) => component.ingredients
         .filter((ingredient) => !ingredient.isBuffer && ingredient.name.trim())
         .map((ingredient) => ({
           name: ingredient.name,
@@ -460,14 +472,18 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
           unitId: ingredient.unitId,
           notes: ingredient.notes,
           component: component.name.trim() || null,
+          componentId: component.id,
+          componentPosition: componentIndex + 1,
         }))),
-      steps: draft.instructionComponents.flatMap((component) => component.steps
+      steps: draft.instructionComponents.flatMap((component, componentIndex) => component.steps
         .filter((step) => !step.isBuffer && step.instruction.trim())
         .map((step) => ({
           instruction: step.instruction,
           durationMinutes: step.durationMinutes,
           advanceNotice: step.advanceNotice,
           component: component.name.trim() || null,
+          componentId: component.id,
+          componentPosition: componentIndex + 1,
         }))),
     };
     try {
@@ -489,27 +505,25 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
   }
 
   const stepMinutes = draft.instructionComponents.reduce((total, component) => total + component.steps.reduce((componentTotal, step) => componentTotal + (step.durationMinutes ?? 0), 0), 0);
+  const previewImageUrl = getSupportedRecipeImageUrl(draft.imageUrl);
+
+  if (!draftReady) {
+    return <div aria-busy="true" className="recipe-authoring recipe-authoring-loading"><div /><aside /></div>;
+  }
 
   return (
     <div className="recipe-authoring">
       <div className="recipe-authoring-main">
         <header className="recipe-authoring-header">
           <Link className="recipe-authoring-back" href="/recipes"><ArrowLeft aria-hidden="true" size={18} /> <span>{recipeId ? "Edit recipe" : "Create recipe"}</span></Link>
-          <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Paste recipe</button>
+          <div className="recipe-authoring-header-actions">
+            <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Paste recipe</button>
+            <details className="recipe-authoring-actions-menu" ref={actionsMenuRef}>
+              <summary aria-label="More recipe actions" title="More recipe actions"><MoreHorizontal aria-hidden="true" size={18} /></summary>
+              <div><button onClick={clearRecipe} type="button"><Trash2 aria-hidden="true" size={16} /> {recipeId ? "Discard local changes" : "Clear recipe"}</button></div>
+            </details>
+          </div>
         </header>
-
-        {recoveredDraft ? (
-          <section className="recipe-draft-recovery" role="status">
-            <div>
-              <strong>Continue your local draft?</strong>
-              <p>There are changes from {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(recoveredDraft.updatedAt))} that have not been saved to Picknic.</p>
-            </div>
-            <div>
-              <button className="app-theme-primary-button" onClick={continueRecoveredDraft} type="button">Continue draft</button>
-              <button className="app-theme-secondary-button" onClick={startOver} type="button">Start over</button>
-            </div>
-          </section>
-        ) : null}
 
         <section className="recipe-identity">
           <label className="sr-only" htmlFor="recipe-title">Recipe title</label>
@@ -559,9 +573,7 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
                         {!ingredient.isBuffer ? <button aria-label={`Delete ${ingredient.name || `ingredient ${index + 1}`}`} className="row-delete" onClick={() => deleteIngredient(component.id, ingredient.id)} type="button"><Trash2 size={16} /></button> : <span className="row-action-placeholder" />}
                       </>;
 
-                      return ingredient.isBuffer
-                        ? <div className="ingredient-editor-row is-buffer" key={ingredient.id}><span className="row-drag-placeholder" />{fields}</div>
-                        : <SortableEditorRow className="ingredient-editor-row" handleLabel={`Reorder ${ingredient.name || `ingredient ${index + 1}`}`} id={ingredient.id} index={index} key={ingredient.id}>{fields}</SortableEditorRow>;
+                      return <SortableEditorRow className={`ingredient-editor-row${ingredient.isBuffer ? " is-buffer" : ""}`} disabled={ingredient.isBuffer} handleLabel={`Reorder ${ingredient.name || `ingredient ${index + 1}`}`} id={ingredient.id} index={index} key={ingredient.id}>{fields}</SortableEditorRow>;
                     })}
                   </DragDropProvider>
                 </div>
@@ -597,16 +609,14 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
                           <textarea aria-label={`Step ${index + 1}`} maxLength={1200} onChange={(event) => updateStep(component.id, step.id, { instruction: event.target.value })} placeholder="Add step…" rows={1} value={step.instruction} />
                           {!step.isBuffer ? (
                             <div className="step-meta">
-                              <label><Clock3 aria-hidden="true" size={15} /><span className="sr-only">Minutes for step {index + 1}</span><input aria-label={`Minutes for step ${index + 1}`} min="1" onChange={(event) => updateStep(component.id, step.id, { durationMinutes: event.target.value === "" ? null : Math.max(1, Number(event.target.value) || 1) })} placeholder="min" type="number" value={step.durationMinutes ?? ""} /></label>
+                              <label><Clock3 aria-hidden="true" size={15} /><span className="sr-only">Minutes for step {index + 1}</span><input aria-label={`Minutes for step ${index + 1}`} max={MAX_RECIPE_MINUTES} min="1" onChange={(event) => updateStep(component.id, step.id, { durationMinutes: event.target.value === "" ? null : Math.min(MAX_RECIPE_MINUTES, Math.max(1, Number(event.target.value) || 1)) })} placeholder="min" type="number" value={step.durationMinutes ?? ""} /></label>
                               <button aria-label={`${step.advanceNotice ? "Remove" : "Add"} advance notice for step ${index + 1}`} aria-pressed={step.advanceNotice} className={step.advanceNotice ? "is-notice" : undefined} onClick={() => updateStep(component.id, step.id, { advanceNotice: !step.advanceNotice })} title="Needs advance notice" type="button"><BellRing size={16} /><span>{step.advanceNotice ? "Advance notice" : "Notice"}</span></button>
                               <button aria-label={`Delete step ${index + 1}`} className="step-delete" onClick={() => deleteStep(component.id, step.id)} type="button"><Trash2 size={16} /></button>
                             </div>
                           ) : <span className="row-action-placeholder" />}
                         </>;
 
-                        return step.isBuffer
-                          ? <div className="step-editor-row is-buffer" key={step.id}><span className="row-drag-placeholder" />{fields}</div>
-                          : <SortableEditorRow className="step-editor-row" handleLabel={`Reorder step ${index + 1}`} id={step.id} index={index} key={step.id}>{fields}</SortableEditorRow>;
+                        return <SortableEditorRow className={`step-editor-row${step.isBuffer ? " is-buffer" : ""}`} disabled={step.isBuffer} handleLabel={`Reorder step ${index + 1}`} id={step.id} index={index} key={step.id}>{fields}</SortableEditorRow>;
                       })}
                     </DragDropProvider>
                   </div>
@@ -619,13 +629,13 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
 
       <aside className="recipe-settings">
         <div className="recipe-image-preview">
-          {draft.imageUrl && !imageFailed
-            ? <Image alt="Recipe preview" fill onError={() => setImageFailed(true)} sizes="(max-width: 1240px) 50vw, 360px" src={draft.imageUrl} unoptimized />
+          {previewImageUrl && !imageFailed
+            ? <Image alt="Recipe preview" fill onError={() => setImageFailed(true)} sizes="(max-width: 1240px) 50vw, 360px" src={previewImageUrl} unoptimized />
             : <div><ImageIcon aria-hidden="true" size={26} /><span>{draft.imageUrl ? "Photo could not be loaded" : "Recipe photo preview"}</span></div>}
         </div>
         <div className="recipe-setting-fields">
           <label><span>Image URL</span><input onChange={(event) => { setImageFailed(false); setDraft((current) => ({ ...current, imageUrl: event.target.value })); }} placeholder="https://…" type="url" value={draft.imageUrl} /><small>Landscape images work best.</small></label>
-          <label><span>Total time</span><div className="setting-icon-input"><Clock3 size={17} /><input min="1" onChange={(event) => setDraft((current) => ({ ...current, totalTimeMinutes: event.target.value ? Number(event.target.value) : null }))} placeholder="Minutes" type="number" value={draft.totalTimeMinutes ?? ""} /><span>min</span></div>{stepMinutes > 0 ? <small>Step times add up to {stepMinutes} min.</small> : null}</label>
+          <label><span>Total time</span><div className="setting-icon-input"><Clock3 size={17} /><input max={MAX_RECIPE_MINUTES} min="1" onChange={(event) => setDraft((current) => ({ ...current, totalTimeMinutes: event.target.value === "" ? null : Math.min(MAX_RECIPE_MINUTES, Math.max(1, Number(event.target.value) || 1)) }))} placeholder="Minutes" type="number" value={draft.totalTimeMinutes ?? ""} /><span>min</span></div>{stepMinutes > 0 ? <small>Step times add up to {stepMinutes} min.</small> : null}</label>
           <fieldset className="servings-setting"><legend>Servings</legend><div><button aria-label="Decrease servings" disabled={draft.servings <= 1} onClick={() => setDraft((current) => ({ ...current, servings: Math.max(1, current.servings - 1) }))} type="button"><Minus size={17} /></button><strong>{draft.servings}</strong><button aria-label="Increase servings" onClick={() => setDraft((current) => ({ ...current, servings: current.servings + 1 }))} type="button"><Plus size={17} /></button></div></fieldset>
           <label><span>Tags</span><input maxLength={240} onChange={(event) => { const value = event.target.value; setTagsText(value); setDraft((current) => ({ ...current, tags: value.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 10) })); }} placeholder="Weeknight, chicken, one pot" value={tagsText} /><small>Separate up to 10 tags with commas.</small></label>
           {draft.tags.length ? <div aria-label="Recipe tags" className="recipe-setting-tags">{draft.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
@@ -635,7 +645,7 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
           <span>
             <Check size={16} />
             Local draft
-            <small>{formatDraftTime(savedLocallyAt)}</small>
+            <small>{restoredDraftAt ? `Restored draft from ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(restoredDraftAt))}` : formatDraftTime(savedLocallyAt)}</small>
           </span>
         </div>
         {error ? <p className="recipe-editor-error" role="alert">{error} Check the fields above and try again.</p> : null}

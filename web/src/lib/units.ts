@@ -67,6 +67,16 @@ export function resolveUnit(value: string | null | undefined, preferredSystem: M
   return matches.find((unit) => unit.system === preferredSystem) ?? matches.find((unit) => unit.system === "neutral") ?? matches[0];
 }
 
+export function resolveUnambiguousUnit(value: string | null | undefined): UnitDefinition | null {
+  if (!value?.trim()) return null;
+  const matches = unitsByAlias.get(normalizeAlias(value));
+  return matches?.length === 1 ? matches[0] : null;
+}
+
+export function getUnitStorageKey(unit: string, unitId: string | null | undefined): string {
+  return unitId ?? `unit:${normalizeAlias(unit)}`;
+}
+
 function unitMatchesInput(unit: UnitDefinition, value: string): boolean {
   const input = normalizeAlias(value);
   return [unit.symbol, unit.name, ...unit.aliases].some((candidate) => normalizeAlias(candidate) === input);
@@ -208,13 +218,13 @@ export function formatMeasurement(
   preference: MeasurementPreference,
   multiplier = 1,
 ): FormattedMeasurement {
-  const scaledQuantity = quantity == null ? null : roundMeasurement(quantity * multiplier);
+  const scaledQuantity = quantity == null ? null : quantity * multiplier;
   const source = getUnitById(unitId) ?? resolveUnit(unitText);
 
   if (preference === "original" || !source) {
     return {
       converted: false,
-      quantity: scaledQuantity,
+      quantity: scaledQuantity === null ? null : roundMeasurement(scaledQuantity),
       unitId: source?.id ?? null,
       unitName: source?.name ?? null,
       unitSymbol: unitText?.trim() || null,
@@ -224,7 +234,7 @@ export function formatMeasurement(
   if (source.system === "neutral" || source.system === preference || source.factorToBase === null || scaledQuantity === null) {
     return {
       converted: false,
-      quantity: scaledQuantity,
+      quantity: scaledQuantity === null ? null : roundMeasurement(scaledQuantity),
       unitId: source.id,
       unitName: source.name,
       unitSymbol: source.symbol,
@@ -234,7 +244,13 @@ export function formatMeasurement(
   const baseValue = scaledQuantity * source.factorToBase;
   const target = preferredTargetUnit(source.dimension, baseValue, preference);
   if (!target?.factorToBase) {
-    return { converted: false, quantity: scaledQuantity, unitId: source.id, unitName: source.name, unitSymbol: source.symbol };
+    return {
+      converted: false,
+      quantity: roundMeasurement(scaledQuantity),
+      unitId: source.id,
+      unitName: source.name,
+      unitSymbol: source.symbol,
+    };
   }
 
   return {

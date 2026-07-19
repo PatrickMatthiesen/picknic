@@ -7,22 +7,39 @@ const RECIPE_IMAGE_FALLBACKS = [
   "/recipe-images/miso-glazed-tofu-bowls.webp",
 ] as const;
 
-type RecipeImageInput = {
+export type RecipeImageInput = {
   id: string;
   imageUrl?: string | null;
 };
 
-export function getRecipeImageUrl(recipe: RecipeImageInput): string {
-  if (recipe.imageUrl) {
-    return recipe.imageUrl;
-  }
-
+export function getRecipeImageFallbackUrl(recipeId: string): string {
   let hash = 0;
-  for (const character of recipe.id) {
+  for (const character of recipeId) {
     hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
   }
 
   return RECIPE_IMAGE_FALLBACKS[hash % RECIPE_IMAGE_FALLBACKS.length];
+}
+
+export function getRecipeImageUrl(recipe: RecipeImageInput): string {
+  return getSupportedRecipeImageUrl(recipe.imageUrl) ?? getRecipeImageFallbackUrl(recipe.id);
+}
+
+export function getSupportedRecipeImageUrl(value: string | null | undefined): string | null {
+  const imageUrl = value?.trim();
+  if (imageUrl?.startsWith("/") && !imageUrl.startsWith("//")) {
+    return imageUrl;
+  }
+  if (imageUrl) {
+    try {
+      const parsed = new URL(imageUrl);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") return imageUrl;
+    } catch {
+      // Invalid and unsupported URLs use the same deterministic fallback as an empty image.
+    }
+  }
+
+  return null;
 }
 
 export function formatMealType(value: string): string {

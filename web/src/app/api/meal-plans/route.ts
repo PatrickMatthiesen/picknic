@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { getWeekStartUtc, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
+import { ensureRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
 type MealPlanEntryPayload = {
   date?: unknown;
@@ -83,12 +84,27 @@ export async function GET(request: Request) {
           recipe: {
             select: { id: true, title: true, servings: true },
           },
+          recipeRevision: { select: { snapshot: true } },
         },
       },
     },
   });
 
-  return NextResponse.json({ data: mealPlan });
+  const data = mealPlan
+    ? {
+        ...mealPlan,
+        entries: mealPlan.entries.map(({ recipeRevision, ...entry }) => {
+          const snapshot = recipeRevision ? readRecipeSnapshot(recipeRevision.snapshot) : null;
+          return {
+            ...entry,
+            recipe: snapshot
+              ? { id: entry.recipe.id, title: snapshot.title, servings: snapshot.servings }
+              : entry.recipe,
+          };
+        }),
+      }
+    : null;
+  return NextResponse.json({ data });
 }
 
 export async function POST(request: Request) {
@@ -113,14 +129,25 @@ export async function POST(request: Request) {
   const recipes = await prisma.recipe.findMany({
     where: {
       id: { in: recipeIds },
-      OR: [{ householdId: membership.householdId }, { visibility: RecipeVisibility.PUBLIC }],
+      deletedAt: null,
+      OR: [
+        { householdId: membership.householdId },
+        { visibility: RecipeVisibility.PUBLIC },
+        { saves: { some: { userId } } },
+      ],
     },
-    select: { id: true },
+    select: { id: true, createdById: true },
   });
-  const validRecipeIds = new Set(recipes.map((recipe) => recipe.id));
+  const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
 
-  if (validRecipeIds.size !== recipeIds.length) {
+  if (recipesById.size !== recipeIds.length) {
     return NextResponse.json({ error: "One or more recipes are not available to the active household." }, { status: 400 });
+  }
+
+  const revisions = new Map<string, string>();
+  for (const recipe of recipes) {
+    const revision = await ensureRecipeRevision(prisma, recipe.id, recipe.createdById);
+    revisions.set(recipe.id, revision.id);
   }
 
   const mealPlan = await prisma.mealPlan.upsert({
@@ -154,10 +181,12 @@ export async function POST(request: Request) {
           date: entry.date,
           mealType: entry.mealType,
           recipeId: entry.recipeId,
+          recipeRevisionId: revisions.get(entry.recipeId),
           servingsOverride: entry.servingsOverride,
         },
         update: {
           recipeId: entry.recipeId,
+          recipeRevisionId: revisions.get(entry.recipeId),
           servingsOverride: entry.servingsOverride,
         },
       }),
@@ -171,10 +200,25 @@ export async function POST(request: Request) {
         orderBy: [{ date: "asc" }, { mealType: "asc" }],
         include: {
           recipe: { select: { id: true, title: true, servings: true } },
+          recipeRevision: { select: { snapshot: true } },
         },
       },
     },
   });
 
-  return NextResponse.json({ data: updatedMealPlan }, { status: 201 });
+  const data = updatedMealPlan
+    ? {
+        ...updatedMealPlan,
+        entries: updatedMealPlan.entries.map(({ recipeRevision, ...entry }) => {
+          const snapshot = recipeRevision ? readRecipeSnapshot(recipeRevision.snapshot) : null;
+          return {
+            ...entry,
+            recipe: snapshot
+              ? { id: entry.recipe.id, title: snapshot.title, servings: snapshot.servings }
+              : entry.recipe,
+          };
+        }),
+      }
+    : null;
+  return NextResponse.json({ data }, { status: 201 });
 }

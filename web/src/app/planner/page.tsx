@@ -1,14 +1,15 @@
-import { MealType, RecipeVisibility } from "@prisma/client";
+import { MealType, Prisma, RecipeVisibility } from "@prisma/client";
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { RecipeImage } from "@/app/_components/recipe-image";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { addUtcDays, getDateKey, getWeekStartUtc, parseDateKey, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
-import { formatMealType, getRecipeImageUrl } from "@/lib/recipe-display";
+import { formatMealType } from "@/lib/recipe-display";
+import { ensureRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
 const OPTIONAL_MEAL_TYPES = [MealType.BREAKFAST, MealType.BRUNCH, MealType.LUNCH, MealType.SNACK, MealType.OTHER];
 const RECIPE_VIEWS = ["all", "saved", "collections", "discover"] as const;
@@ -24,6 +25,20 @@ function queryString(values: Record<string, string | undefined>) {
     if (value) params.set(key, value);
   }
   return params.toString();
+}
+
+function getPlannedRecipe(entry: {
+  recipe: { id: string; imageUrl: string | null; servings: number; title: string };
+  recipeRevision: { snapshot: Prisma.JsonValue } | null;
+}) {
+  if (!entry.recipeRevision) return entry.recipe;
+  const snapshot = readRecipeSnapshot(entry.recipeRevision.snapshot);
+  return {
+    id: entry.recipe.id,
+    imageUrl: snapshot.imageUrl,
+    servings: snapshot.servings,
+    title: snapshot.title,
+  };
 }
 
 export default async function PlannerPage({ searchParams }: PageProps) {
@@ -67,9 +82,13 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     const recipe = await prisma.recipe.findFirst({
       where: {
         id: recipeId,
-        OR: [{ householdId: activeMembership.householdId }, { visibility: RecipeVisibility.PUBLIC }],
+        OR: [
+          { householdId: activeMembership.householdId, deletedAt: null },
+          { visibility: RecipeVisibility.PUBLIC, deletedAt: null },
+          { saves: { some: { userId: context.userId } }, latestRevisionId: { not: null } },
+        ],
       },
-      select: { id: true },
+      select: { id: true, createdById: true, deletedAt: true, householdId: true, latestRevisionId: true, visibility: true },
     });
     if (!recipe) throw new Error("This recipe is not available to your household.");
 
@@ -80,10 +99,15 @@ export default async function PlannerPage({ searchParams }: PageProps) {
       create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart: activeWeekStart },
       select: { id: true },
     });
+    const revision = recipe.householdId !== activeMembership.householdId
+      && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt)
+      && recipe.latestRevisionId
+      ? await prisma.recipeRevision.findUniqueOrThrow({ where: { id: recipe.latestRevisionId } })
+      : await ensureRecipeRevision(prisma, recipe.id, recipe.createdById);
     await prisma.mealPlanEntry.upsert({
       where: { mealPlanId_date_mealType: { mealPlanId: plan.id, date: toUtcDate(date), mealType } },
-      update: { recipeId },
-      create: { mealPlanId: plan.id, recipeId, date: toUtcDate(date), mealType },
+      update: { recipeId, recipeRevisionId: revision.id },
+      create: { mealPlanId: plan.id, recipeId, recipeRevisionId: revision.id, date: toUtcDate(date), mealType },
     });
     revalidatePath("/planner");
     redirect(returnTo);
@@ -110,9 +134,15 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     if (existing) {
       await prisma.savedRecipe.delete({ where: { userId_recipeId: { userId: context.userId, recipeId } } });
     } else {
-      const available = await prisma.recipe.findFirst({ where: { id: recipeId, OR: [{ createdById: context.userId }, { visibility: RecipeVisibility.PUBLIC }] }, select: { id: true } });
+      const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+      if (!activeMembership) throw new Error("No household is connected to this account.");
+      const available = await prisma.recipe.findFirst({
+        where: { id: recipeId, deletedAt: null, OR: [{ householdId: activeMembership.householdId }, { visibility: RecipeVisibility.PUBLIC }] },
+        select: { id: true, createdById: true },
+      });
       if (!available) throw new Error("This recipe cannot be saved.");
-      await prisma.savedRecipe.create({ data: { userId: context.userId, recipeId } });
+      const revision = await ensureRecipeRevision(prisma, available.id, available.createdById);
+      await prisma.savedRecipe.create({ data: { userId: context.userId, recipeId, lastSeenRevisionId: revision.id } });
     }
     revalidatePath("/planner");
     redirect(returnTo);
@@ -121,26 +151,41 @@ export default async function PlannerPage({ searchParams }: PageProps) {
   const [mealPlan, recipes] = await Promise.all([
     prisma.mealPlan.findUnique({
       where: { householdId_weekStart: { householdId: membership.householdId, weekStart } },
-      include: { entries: { orderBy: [{ date: "asc" }, { mealType: "asc" }], include: { recipe: true } } },
+      include: { entries: { orderBy: [{ date: "asc" }, { mealType: "asc" }], include: { recipe: true, recipeRevision: true } } },
     }),
     prisma.recipe.findMany({
       where: {
-        ...(query ? { title: { contains: query, mode: "insensitive" } } : {}),
+        ...(query && (view === "all" || view === "discover") ? { title: { contains: query, mode: "insensitive" } } : {}),
         ...(view === "saved" ? { saves: { some: { userId } } } : {}),
         ...(view === "collections" ? { collectionItems: { some: { collection: { userId } } } } : {}),
         ...(view === "discover"
-          ? { visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
+          ? { deletedAt: null, visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
           : view === "all"
-            ? { OR: [{ householdId: membership.householdId }, { visibility: RecipeVisibility.PUBLIC }] }
+            ? { deletedAt: null, OR: [{ householdId: membership.householdId }, { visibility: RecipeVisibility.PUBLIC }] }
             : {}),
       },
-      include: { saves: { where: { userId }, select: { userId: true } } },
+      include: { saves: { where: { userId }, select: { userId: true, lastSeenRevisionId: true } } },
       orderBy: [{ updatedAt: "desc" }],
       take: 18,
     }),
   ]);
 
   const returnTo = `/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined })}`;
+  const retainedRevisionIds = recipes
+    .filter((recipe) => recipe.householdId !== membership.householdId && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt))
+    .map((recipe) => recipe.latestRevisionId)
+    .filter((id): id is string => id !== null);
+  const retainedRevisions = retainedRevisionIds.length
+    ? await prisma.recipeRevision.findMany({ where: { id: { in: retainedRevisionIds } } })
+    : [];
+  const retainedSnapshots = new Map(retainedRevisions.map((revision) => [revision.id, readRecipeSnapshot(revision.snapshot)]));
+  const displayRecipes = recipes.map((recipe) => {
+    const snapshot = recipe.latestRevisionId ? retainedSnapshots.get(recipe.latestRevisionId) : null;
+    return snapshot ? { ...recipe, ...snapshot, id: recipe.id } : recipe;
+  });
+  const visibleRecipes = query
+    ? displayRecipes.filter((recipe) => recipe.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+    : displayRecipes;
   const entriesByDay = new Map<string, NonNullable<typeof mealPlan>["entries"]>();
   for (const entry of mealPlan?.entries ?? []) {
     const key = getDateKey(entry.date);
@@ -168,6 +213,7 @@ export default async function PlannerPage({ searchParams }: PageProps) {
           const entries = entriesByDay.get(dateKey) ?? [];
           const dinner = entries.find((entry) => entry.mealType === MealType.DINNER);
           const extras = entries.filter((entry) => entry.mealType !== MealType.DINNER);
+          const dinnerRecipe = dinner ? getPlannedRecipe(dinner) : null;
           const isToday = dateKey === todayKey;
           const isSelected = dateKey === selectedDayKey;
 
@@ -179,15 +225,15 @@ export default async function PlannerPage({ searchParams }: PageProps) {
               </header>
               <div className="dinner-slot">
                 <span className="meal-label">Dinner</span>
-                {dinner ? (
+                {dinner && dinnerRecipe ? (
                   <div className="planned-meal">
-                    <Image alt="" height={112} loading="eager" src={getRecipeImageUrl(dinner.recipe)} width={168} />
+                    <RecipeImage alt="" height={112} loading="eager" recipe={dinnerRecipe} width={168} />
                     <span className="planned-badge">Planned</span>
-                    <Link href={`/recipes/${dinner.recipe.id}`}>{dinner.recipe.title}</Link>
+                    <Link href={`/recipes/${dinner.recipe.id}`}>{dinnerRecipe.title}</Link>
                     <form action={removeEntry}>
                       <input name="entryId" type="hidden" value={dinner.id} />
                       <input name="returnTo" type="hidden" value={returnTo} />
-                      <button aria-label={`Remove ${dinner.recipe.title} from ${dateKey}`} type="submit"><Trash2 size={15} /></button>
+                      <button aria-label={`Remove ${dinnerRecipe.title} from ${dateKey}`} type="submit"><Trash2 size={15} /></button>
                     </form>
                   </div>
                 ) : (
@@ -200,17 +246,18 @@ export default async function PlannerPage({ searchParams }: PageProps) {
               </div>
               {extras.length > 0 ? (
                 <div className="extra-meals">
-                  {extras.map((entry) => (
-                    <div key={entry.id}>
+                  {extras.map((entry) => {
+                    const plannedRecipe = getPlannedRecipe(entry);
+                    return <div key={entry.id}>
                       <span>{formatMealType(entry.mealType)}</span>
-                      <Link href={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
+                      <Link href={`/recipes/${entry.recipe.id}`}>{plannedRecipe.title}</Link>
                       <form action={removeEntry}>
                         <input name="entryId" type="hidden" value={entry.id} />
                         <input name="returnTo" type="hidden" value={returnTo} />
-                        <button aria-label={`Remove ${entry.recipe.title}`} type="submit"><Trash2 size={14} /></button>
+                        <button aria-label={`Remove ${plannedRecipe.title}`} type="submit"><Trash2 size={14} /></button>
                       </form>
-                    </div>
-                  ))}
+                    </div>;
+                  })}
                 </div>
               ) : null}
               <details className="add-meal-menu">
@@ -248,7 +295,7 @@ export default async function PlannerPage({ searchParams }: PageProps) {
             </Link>
           ))}
         </nav>
-        {recipes.length === 0 ? (
+        {visibleRecipes.length === 0 ? (
           <div className="recipe-tray-empty">
             <p>No recipes match this view.</p>
             <Link className="app-theme-primary-button recipe-empty-action px-4 py-2 text-sm" href="/recipes/new">
@@ -258,9 +305,9 @@ export default async function PlannerPage({ searchParams }: PageProps) {
           </div>
         ) : (
           <div className="recipe-tray-grid">
-            {recipes.map((recipe) => (
+            {visibleRecipes.map((recipe) => (
               <article className="recipe-tile" key={recipe.id}>
-                <Image alt="" height={128} src={getRecipeImageUrl(recipe)} width={192} />
+                <RecipeImage alt="" height={128} recipe={recipe} width={192} />
                 <div>
                   <Link href={`/recipes/${recipe.id}`}>{recipe.title}</Link>
                   <p>{recipe.servings} servings</p>

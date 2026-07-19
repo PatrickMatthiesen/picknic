@@ -1,4 +1,4 @@
-import { getUnitById, resolveUnit } from "./units";
+import { getUnitById, resolveUnambiguousUnit } from "./units";
 
 export type IngredientLike = {
   name: string;
@@ -6,11 +6,14 @@ export type IngredientLike = {
   unit: string | null;
   unitId?: string | null;
   component?: string | null;
+  componentId?: string | null;
+  componentPosition?: number | null;
 };
 
 export type IngredientGroup<T extends IngredientLike = IngredientLike> = {
   component: string;
   ingredients: T[];
+  key: string;
 };
 
 export type AggregatedIngredient = {
@@ -25,19 +28,19 @@ function roundToTwo(value: number): number {
 }
 
 export function groupIngredientsByComponent<T extends IngredientLike>(ingredients: T[]): IngredientGroup<T>[] {
-  const groups = new Map<string, T[]>();
+  const groups = new Map<string, { component: string; position: number; ingredients: T[] }>();
 
   for (const ingredient of ingredients) {
     const component = ingredient.component?.trim() || "Main";
-    const current = groups.get(component) ?? [];
-    current.push(ingredient);
-    groups.set(component, current);
+    const key = ingredient.componentId?.trim() || `legacy:${component}`;
+    const current = groups.get(key) ?? { component, position: ingredient.componentPosition ?? groups.size + 1, ingredients: [] };
+    current.ingredients.push(ingredient);
+    groups.set(key, current);
   }
 
-  return Array.from(groups, ([component, groupedIngredients]) => ({
-    component,
-    ingredients: groupedIngredients,
-  }));
+  return Array.from(groups.entries())
+    .sort(([, left], [, right]) => left.position - right.position)
+    .map(([key, { component, ingredients: groupedIngredients }]) => ({ component, ingredients: groupedIngredients, key }));
 }
 
 export function aggregateIngredients(
@@ -52,13 +55,13 @@ export function aggregateIngredients(
       continue;
     }
 
-    const definition = getUnitById(ingredient.unitId) ?? resolveUnit(ingredient.unit);
+    const definition = getUnitById(ingredient.unitId) ?? resolveUnambiguousUnit(ingredient.unit);
     const unit = definition?.symbol ?? ingredient.unit?.trim() ?? null;
     const unitId = definition?.id ?? null;
     const key = `${name.toLocaleLowerCase()}::${unitId ?? unit?.toLocaleLowerCase() ?? ""}`;
     const numericQuantity = ingredient.quantity == null ? null : Number(ingredient.quantity);
     const quantity = numericQuantity !== null && Number.isFinite(numericQuantity)
-      ? roundToTwo(numericQuantity * multiplier)
+      ? numericQuantity * multiplier
       : null;
     const existing = totals.get(key);
 
@@ -67,11 +70,14 @@ export function aggregateIngredients(
     } else if (existing.quantity === null || quantity === null) {
       existing.quantity = null;
     } else {
-      existing.quantity = roundToTwo(existing.quantity + quantity);
+      existing.quantity += quantity;
     }
   }
 
-  return Array.from(totals.values()).sort(
+  return Array.from(totals.values()).map((item) => ({
+    ...item,
+    quantity: item.quantity === null ? null : roundToTwo(item.quantity),
+  })).sort(
     (left, right) => left.name.localeCompare(right.name) || (left.unit ?? "").localeCompare(right.unit ?? ""),
   );
 }

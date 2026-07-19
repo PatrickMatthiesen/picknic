@@ -14,4 +14,16 @@ describe("recipe step presentation", () => {
       { component: "Dressing", durationMinutes: 5 },
     ]);
   });
+
+  test("keeps duplicate component names separate when stable ids are present", () => {
+    const groups = groupRecipeSteps([
+      { instruction: "First filling", component: "Filling", componentId: "first", componentPosition: 1, durationMinutes: 5 },
+      { instruction: "Second filling", component: "Filling", componentId: "second", componentPosition: 2, durationMinutes: 10 },
+    ]);
+
+    expect(groups.map((group) => group.steps.map((step) => step.instruction))).toEqual([
+      ["First filling"],
+      ["Second filling"],
+    ]);
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   formatMeasurement,
+  getUnitStorageKey,
   inferMeasurementSystem,
   inferSourceMeasurementSystem,
   normalizeUnitInput,
@@ -33,6 +34,12 @@ describe("recipe units", () => {
     expect(normalizeUnitInput("cup", "metric", "us-cup")).toEqual({ unit: "cup", unitId: "us-cup" });
   });
 
+  test("keeps pantry identity separate for units with the same symbol", () => {
+    expect(getUnitStorageKey("cup", "metric-cup")).toBe("metric-cup");
+    expect(getUnitStorageKey("cup", "us-cup")).toBe("us-cup");
+    expect(getUnitStorageKey(" Small Jar ", null)).toBe("unit:small jar");
+  });
+
   test("uses unambiguous units to understand an imported recipe", () => {
     expect(inferSourceMeasurementSystem(["cups", "oz", "lb"], "metric")).toBe("us");
     expect(inferSourceMeasurementSystem(["cups", "g", "ml"], "us")).toBe("metric");
@@ -43,5 +50,13 @@ describe("recipe units", () => {
     expect(formatMeasurement(1, "cup", "us-cup", "original")).toMatchObject({ quantity: 1, unitSymbol: "cup", converted: false });
     expect(formatMeasurement(1, "cup", "us-cup", "metric")).toMatchObject({ quantity: 2.37, unitSymbol: "dl", converted: true });
     expect(formatMeasurement(8, "oz", "us-ounce", "metric")).toMatchObject({ quantity: 227, unitSymbol: "g", converted: true });
+  });
+
+  test("converts the unrounded scaled quantity", () => {
+    expect(formatMeasurement(1, "cup", "us-cup", "metric", 1 / 3)).toMatchObject({
+      quantity: 78.9,
+      unitSymbol: "ml",
+      converted: true,
+    });
   });
 });

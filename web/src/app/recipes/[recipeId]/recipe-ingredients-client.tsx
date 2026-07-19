@@ -15,7 +15,7 @@ type Ingredient = {
   unitId: string | null;
 };
 
-type IngredientGroup = { component: string; ingredients: Ingredient[] };
+type IngredientGroup = { component: string; ingredients: Ingredient[]; key: string };
 
 export function RecipeIngredientsClient({ groups }: { groups: IngredientGroup[] }) {
   const [preference, setPreference] = useMeasurementPreference();
@@ -27,7 +27,7 @@ export function RecipeIngredientsClient({ groups }: { groups: IngredientGroup[] 
         <MeasurementPreferenceSelect onChange={setPreference} value={preference} />
       </header>
       {groups.map((group) => (
-        <section key={group.component}>
+        <section key={group.key}>
           {groups.length > 1 ? <h3>{group.component}</h3> : null}
           <ul>{group.ingredients.map((ingredient) => (
             <li key={ingredient.id}>
@@ -40,4 +40,3 @@ export function RecipeIngredientsClient({ groups }: { groups: IngredientGroup[] 
     </aside>
   );
 }
-

@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
+import { getUnitStorageKey, normalizeUnitInput } from "@/lib/units";
 
 type PantryPayload = {
   ingredientName?: unknown;
   quantity?: unknown;
   unit?: unknown;
+  unitId?: unknown;
   expiresAt?: unknown;
 };
 
@@ -28,7 +30,13 @@ export async function GET() {
 export async function POST(request: Request) {
   const payload = (await request.json()) as PantryPayload;
   const ingredientName = typeof payload.ingredientName === "string" ? payload.ingredientName.trim() : "";
-  const unit = typeof payload.unit === "string" ? payload.unit.trim() : "";
+  const authoredUnit = typeof payload.unit === "string" ? payload.unit.trim() : "";
+  const normalizedUnit = normalizeUnitInput(
+    authoredUnit,
+    "metric",
+    typeof payload.unitId === "string" ? payload.unitId : null,
+  );
+  const unit = normalizedUnit.unit ?? authoredUnit;
   const quantity = typeof payload.quantity === "number" || typeof payload.quantity === "string" ? Number(payload.quantity) : NaN;
 
   if (!ingredientName || !unit || !Number.isFinite(quantity) || quantity <= 0) {
@@ -49,16 +57,18 @@ export async function POST(request: Request) {
 
   const item = await prisma.pantryItem.upsert({
     where: {
-      householdId_ingredientName_unit: {
+      householdId_ingredientName_unitKey: {
         householdId: membership.householdId,
         ingredientName,
-        unit,
+        unitKey: getUnitStorageKey(unit, normalizedUnit.unitId),
       },
     },
     update: {
       quantity,
       expiresAt: expiresAt && !Number.isNaN(expiresAt.valueOf()) ? expiresAt : null,
       userId,
+      unitId: normalizedUnit.unitId,
+      unitKey: getUnitStorageKey(unit, normalizedUnit.unitId),
     },
     create: {
       householdId: membership.householdId,
@@ -66,6 +76,8 @@ export async function POST(request: Request) {
       ingredientName,
       quantity,
       unit,
+      unitId: normalizedUnit.unitId,
+      unitKey: getUnitStorageKey(unit, normalizedUnit.unitId),
       expiresAt: expiresAt && !Number.isNaN(expiresAt.valueOf()) ? expiresAt : null,
     },
   });

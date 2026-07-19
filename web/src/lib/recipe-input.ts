@@ -1,4 +1,8 @@
-import { getUnitById, normalizeUnitInput } from "./units";
+import { getUnitById, resolveUnambiguousUnit } from "./units";
+
+export const MAX_RECIPE_MINUTES = 10_080;
+
+export class RecipeInputError extends Error {}
 
 type IngredientPayload = {
   name?: unknown;
@@ -7,11 +11,15 @@ type IngredientPayload = {
   unitId?: unknown;
   notes?: unknown;
   component?: unknown;
+  componentId?: unknown;
+  componentPosition?: unknown;
 };
 
 type StepPayload = {
   instruction?: unknown;
   component?: unknown;
+  componentId?: unknown;
+  componentPosition?: unknown;
   durationMinutes?: unknown;
   advanceNotice?: unknown;
 };
@@ -21,8 +29,17 @@ function optionalText(value: unknown): string | null {
 }
 
 export function normalizeOptionalMinutes(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const minutes = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
-  return Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : null;
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > MAX_RECIPE_MINUTES) {
+    throw new RecipeInputError(`Minutes must be between 1 and ${MAX_RECIPE_MINUTES}.`);
+  }
+  return Math.floor(minutes);
+}
+
+function optionalPosition(value: unknown): number | null {
+  const position = typeof value === "number" ? Math.floor(value) : Number.NaN;
+  return Number.isFinite(position) && position > 0 ? position : null;
 }
 
 export function normalizeTags(input: unknown): string[] {
@@ -47,9 +64,12 @@ export function normalizeIngredients(input: unknown) {
           ? Number(ingredient.quantity)
           : null;
       const providedUnit = getUnitById(optionalText(ingredient.unitId));
-      const normalizedUnit = providedUnit
-        ? { unit: providedUnit.symbol, unitId: providedUnit.id }
-        : normalizeUnitInput(optionalText(ingredient.unit));
+      const authoredUnit = optionalText(ingredient.unit);
+      const inferredUnit = providedUnit ?? resolveUnambiguousUnit(authoredUnit);
+      const normalizedUnit = {
+        unit: providedUnit ? authoredUnit ?? providedUnit.symbol : inferredUnit?.symbol ?? authoredUnit,
+        unitId: inferredUnit?.id ?? null,
+      };
 
       return {
         name: typeof ingredient.name === "string" ? ingredient.name.trim() : "",
@@ -57,6 +77,8 @@ export function normalizeIngredients(input: unknown) {
         ...normalizedUnit,
         notes: optionalText(ingredient.notes),
         component: optionalText(ingredient.component),
+        componentId: optionalText(ingredient.componentId),
+        componentPosition: optionalPosition(ingredient.componentPosition),
         position: index + 1,
       };
     })
@@ -72,6 +94,8 @@ export function normalizeSteps(input: unknown) {
       return {
         instruction: typeof step?.instruction === "string" ? step.instruction.trim() : "",
         component: optionalText(step?.component),
+        componentId: optionalText(step?.componentId),
+        componentPosition: optionalPosition(step?.componentPosition),
         durationMinutes: normalizeOptionalMinutes(step?.durationMinutes),
         advanceNotice: step?.advanceNotice === true,
         position: index + 1,
