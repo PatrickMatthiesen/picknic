@@ -1,0 +1,117 @@
+name: Deploy Picknic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-picknic
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Publish and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: "Production"
+    env:
+      DOCKER_CONTEXT_NAME: picknic-host-${{ github.run_id }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.7
+
+      - name: Install Aspire CLI
+        run: |
+          curl -sSL https://aspire.dev/install.sh | bash -s -- --quality "dev"
+          echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: bun install --cwd web --frozen-lockfile
+
+      - name: Publish Docker Compose artifacts
+        env:
+          Parameters__github_models_api_key: ${{ secrets.PICKNIC_GITHUB_MODELS_API_KEY }}
+          Parameters__github_models_endpoint: ${{ vars.PICKNIC_GITHUB_MODELS_ENDPOINT || 'https://models.github.ai/inference' }}
+          Parameters__postgres_password: ${{ secrets.PICKNIC_POSTGRES_PASSWORD }}
+          Parameters__workos_api_key: ${{ secrets.PICKNIC_WORKOS_API_KEY }}
+          Parameters__workos_client_id: ${{ secrets.PICKNIC_WORKOS_CLIENT_ID }}
+          Parameters__workos_cookie_password: ${{ secrets.PICKNIC_WORKOS_COOKIE_PASSWORD }}
+          Parameters__workos_redirect_uri: ${{ vars.PICKNIC_WORKOS_REDIRECT_URI }}
+        run: aspire publish --output-path ./aspire-output --non-interactive
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          use-cache: "true"
+          version: latest
+          ping: ${{ secrets.SSH_HOST }}
+
+      - name: Add SSH host key
+        env:
+          DEPLOY_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy with Aspire through Docker context
+        env:
+          ASPIRE_CONTAINER_RUNTIME: docker
+          DEPLOY_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.SSH_USER }}
+          Parameters__github_models_api_key: ${{ secrets.PICKNIC_GITHUB_MODELS_API_KEY }}
+          Parameters__github_models_endpoint: ${{ vars.PICKNIC_GITHUB_MODELS_ENDPOINT || 'https://models.github.ai/inference' }}
+          Parameters__postgres_password: ${{ secrets.PICKNIC_POSTGRES_PASSWORD }}
+          Parameters__workos_api_key: ${{ secrets.PICKNIC_WORKOS_API_KEY }}
+          Parameters__workos_client_id: ${{ secrets.PICKNIC_WORKOS_CLIENT_ID }}
+          Parameters__workos_cookie_password: ${{ secrets.PICKNIC_WORKOS_COOKIE_PASSWORD }}
+          Parameters__workos_redirect_uri: ${{ vars.PICKNIC_WORKOS_REDIRECT_URI }}
+        run: |
+          docker context create "$DOCKER_CONTEXT_NAME" --docker "host=ssh://$DEPLOY_USER@$DEPLOY_HOST"
+          docker context use "$DOCKER_CONTEXT_NAME"
+          aspire deploy --environment Production --non-interactive
+
+      - name: Verify remote deployment
+        env:
+          DEPLOY_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          web_id="$(docker ps -q --filter label=com.docker.compose.service=web --filter publish=5333 | sed -n '1p')"
+          test -n "$web_id"
+
+          project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$web_id")"
+          test -n "$project"
+
+          for service in web postgres; do
+            container_id="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$service" | sed -n '1p')"
+            test -n "$container_id"
+            test "$(docker inspect --format '{{.State.Status}}' "$container_id")" = "running"
+            test "$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container_id")" = "unless-stopped"
+          done
+
+          migration_id="$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=migrations | sed -n '1p')"
+          test -n "$migration_id"
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$migration_id")" = "0"
+
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "http://$DEPLOY_HOST:5333/" > /dev/null
+          docker ps --filter "label=com.docker.compose.project=$project" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+
+      - name: Remove temporary Docker context
+        if: always()
+        run: |
+          docker context use default
+          docker context rm "$DOCKER_CONTEXT_NAME" || true
