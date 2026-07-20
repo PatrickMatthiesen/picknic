@@ -1,9 +1,11 @@
 import { ShoppingItemSource, ShoppingItemStatus } from "@prisma/client";
+import { getUnitById, resolveUnambiguousUnit } from "./units";
 
 type IngredientInput = {
   name: string;
   quantity: unknown;
   unit: string | null;
+  unitId?: string | null;
 };
 
 type MealPlanEntryInput = {
@@ -21,12 +23,14 @@ type MealPlanInput = {
 type PantryItemInput = {
   ingredientName: string;
   unit: string;
+  unitId?: string | null;
   quantity: unknown;
 };
 
 type ShoppingAggregate = {
   ingredientName: string;
   unit: string | null;
+  unitId: string | null;
   quantity: number | null;
   source: ShoppingItemSource;
   status: ShoppingItemStatus;
@@ -49,18 +53,20 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
         continue;
       }
 
-      const unit = ingredient.unit?.trim() || null;
-      const key = `${ingredientName.toLowerCase()}::${unit?.toLowerCase() ?? ""}`;
+      const definition = getUnitById(ingredient.unitId) ?? resolveUnambiguousUnit(ingredient.unit);
+      const unit = definition?.symbol ?? ingredient.unit?.trim() ?? null;
+      const key = `${ingredientName.toLowerCase()}::${definition?.id ?? unit?.toLowerCase() ?? ""}`;
       const numericQuantity =
         ingredient.quantity !== null && ingredient.quantity !== undefined ? Number(ingredient.quantity) : null;
       const scaledQuantity =
-        numericQuantity !== null && Number.isFinite(numericQuantity) ? roundToTwo(numericQuantity * multiplier) : null;
+        numericQuantity !== null && Number.isFinite(numericQuantity) ? numericQuantity * multiplier : null;
 
       const existing = aggregated.get(key);
       if (!existing) {
         aggregated.set(key, {
           ingredientName,
           unit,
+          unitId: definition?.id ?? null,
           quantity: scaledQuantity,
           source: ShoppingItemSource.AUTO,
           status: ShoppingItemStatus.PENDING,
@@ -71,12 +77,14 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
       if (existing.quantity === null || scaledQuantity === null) {
         existing.quantity = null;
       } else {
-        existing.quantity = roundToTwo(existing.quantity + scaledQuantity);
+        existing.quantity += scaledQuantity;
       }
     }
   }
 
-  return Array.from(aggregated.values()).sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
+  return Array.from(aggregated.values())
+    .map((item) => ({ ...item, quantity: item.quantity === null ? null : roundToTwo(item.quantity) }))
+    .sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
 }
 
 export function subtractPantryFromShoppingItems(
@@ -87,14 +95,15 @@ export function subtractPantryFromShoppingItems(
 
   for (const pantryItem of pantryItems) {
     const ingredientName = pantryItem.ingredientName.trim();
-    const unit = pantryItem.unit.trim();
+    const definition = getUnitById(pantryItem.unitId) ?? resolveUnambiguousUnit(pantryItem.unit);
+    const unit = definition?.symbol ?? pantryItem.unit.trim();
     const quantity = Number(pantryItem.quantity);
 
     if (!ingredientName || !unit || !Number.isFinite(quantity) || quantity <= 0) {
       continue;
     }
 
-    const key = `${ingredientName.toLowerCase()}::${unit.toLowerCase()}`;
+    const key = `${ingredientName.toLowerCase()}::${definition?.id ?? unit.toLowerCase()}`;
     pantryTotals.set(key, roundToTwo((pantryTotals.get(key) ?? 0) + quantity));
   }
 
@@ -104,7 +113,8 @@ export function subtractPantryFromShoppingItems(
         return item;
       }
 
-      const key = `${item.ingredientName.toLowerCase()}::${item.unit.toLowerCase()}`;
+      const definition = getUnitById(item.unitId) ?? resolveUnambiguousUnit(item.unit);
+      const key = `${item.ingredientName.toLowerCase()}::${definition?.id ?? item.unit.toLowerCase()}`;
       const pantryQuantity = pantryTotals.get(key) ?? 0;
 
       if (pantryQuantity <= 0) {

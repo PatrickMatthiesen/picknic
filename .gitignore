@@ -1,2 +1,7 @@
 apphost/aspire-output
 apphost/pgdata
+
+# Agents configs
+.codex
+.agents/skills/impeccable
+

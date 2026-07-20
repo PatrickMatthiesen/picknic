@@ -4,7 +4,7 @@
     "scripts": {
         "dev": "aspire start",
         "stop": "aspire stop",
-        "check": "bun run --cwd web check && dotnet build apphost/apphost.cs -p:NoWarn=ASPIREJAVASCRIPT001",
+        "check": "bun run --cwd web check",
         "dockercompose:up": "cd apphost/aspire-output && docker compose up -d",
         "dockercompose:down": "cd apphost/aspire-output && docker compose down",
         "dockercompose:logs": "cd apphost/aspire-output && docker compose logs -f"

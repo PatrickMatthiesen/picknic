@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-18T13:45:00.000Z",
+  "title": "Design System: Picknic",
+  "extensions": {
+    "colorMeta": {
+      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "#f7f7f4" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#27231f" },
+      "sage": { "role": "primary", "displayName": "Table Sage", "canonical": "#526b4f", "tonalRamp": ["#e8eee5", "#9bb398", "#526b4f", "#40563e"] },
+      "mustard": { "role": "secondary", "displayName": "Dinner Mustard", "canonical": "#d6a72e" },
+      "tomato": { "role": "tertiary", "displayName": "Tomato Red", "canonical": "#b64a3a" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Recipe Display", "purpose": "Picknic wordmark and recipe titles only." },
+      "body": { "displayName": "Working UI", "purpose": "Navigation, planning, editing, ingredients, and instructions." }
+    },
+    "shadows": [
+      { "name": "overlay", "value": "0 4px 8px rgb(39 35 31 / 0.12)", "purpose": "Temporary menus only." }
+    ],
+    "motion": [
+      { "name": "state", "value": "180ms ease-out", "purpose": "Hover, focus, and selected-state color changes." }
+    ],
+    "breakpoints": [
+      { "name": "touch-navigation", "value": "900px" },
+      { "name": "phone-layout", "value": "760px" },
+      { "name": "week-scroll", "value": "1180px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Clear commands such as saving or planning a recipe.",
+      "html": "<button class=\"ds-btn-primary\">Save recipe</button>",
+      "css": ".ds-btn-primary{min-height:44px;border:1px solid #526b4f;border-radius:8px;background:#526b4f;color:#fff;padding:0 16px;font:600 14px Geist,Arial,sans-serif;transition:background-color 180ms ease-out,border-color 180ms ease-out}.ds-btn-primary:hover{border-color:#40563e;background:#40563e}.ds-btn-primary:focus-visible{outline:3px solid rgb(82 107 79 / .34);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Navigation and reversible secondary commands.",
+      "html": "<button class=\"ds-btn-secondary\">Back to recipes</button>",
+      "css": ".ds-btn-secondary{min-height:44px;border:1px solid #e7e5e1;border-radius:8px;background:#fff;color:#27231f;padding:0 16px;font:500 14px Geist,Arial,sans-serif;transition:background-color 180ms ease-out}.ds-btn-secondary:hover{background:#f0f1ed}.ds-btn-secondary:focus-visible{outline:3px solid rgb(82 107 79 / .34);outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Recipe and planning input with a stable touch target.",
+      "html": "<input class=\"ds-field\" placeholder=\"Search recipes\" />",
+      "css": ".ds-field{min-height:44px;border:1px solid #e7e5e1;border-radius:8px;background:#fff;color:#27231f;padding:0 12px;font:400 16px Geist,Arial,sans-serif}.ds-field::placeholder{color:#6d6860}.ds-field:focus{border-color:#526b4f;outline:3px solid rgb(82 107 79 / .34);outline-offset:2px}"
+    },
+    {
+      "name": "Recipe Tile",
+      "kind": "card",
+      "description": "Compact recipe identity with photography and actions.",
+      "html": "<article class=\"ds-recipe\"><div class=\"ds-photo\"></div><strong>Harissa chickpea bowls</strong><small>4 servings</small></article>",
+      "css": ".ds-recipe{width:192px;overflow:hidden;border:1px solid #e7e5e1;border-radius:8px;background:#fff;color:#27231f;font-family:Geist,Arial,sans-serif}.ds-photo{height:112px;background:#e8eee5}.ds-recipe strong,.ds-recipe small{display:block;padding:10px 10px 0}.ds-recipe small{padding-top:4px;padding-bottom:10px;color:#6d6860}"
+    },
+    {
+      "name": "Selected Tab",
+      "kind": "nav",
+      "description": "Quiet source and ingredient-mode selection.",
+      "html": "<nav class=\"ds-tabs\"><a>All recipes</a><a>Saved</a></nav>",
+      "css": ".ds-tabs{display:flex;gap:24px;border-bottom:1px solid #e7e5e1;font:500 13px Geist,Arial,sans-serif}.ds-tabs a{padding:10px 0 9px;color:#6d6860}.ds-tabs a:first-child{border-bottom:2px solid #526b4f;color:#40563e;font-weight:650}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Week Table",
+    "overview": "A calm, compact working surface where the weekly plan leads and food imagery supplies the richness.",
+    "keyCharacteristics": ["Dinner-first week table", "Restrained product palette", "Food-led imagery", "Touch-friendly progressive disclosure"],
+    "rules": [
+      { "name": "The Food Carries Color Rule", "body": "Keep interface color restrained so photography remains the richest visual element.", "section": "colors" },
+      { "name": "The Recipe Serif Rule", "body": "Use Newsreader only for the wordmark and recipe titles.", "section": "typography" },
+      { "name": "The Structural Depth Rule", "body": "Use tonal layers and dividers instead of ambient shadows.", "section": "elevation" }
+    ],
+    "dos": ["Keep the week plan central.", "Use real overhead food photography.", "Preserve touch targets and pointer hover states."],
+    "donts": ["Do not create a busy enterprise dashboard.", "Do not use generic glass-gradient SaaS styling.", "Do not let rustic influence overwhelm clarity."]
+  }
+}

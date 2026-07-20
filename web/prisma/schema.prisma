@@ -19,9 +19,16 @@ enum MembershipRole {
 
 enum MealType {
   BREAKFAST
+  BRUNCH
   LUNCH
   DINNER
   SNACK
+  OTHER
+}
+
+enum RecipeVisibility {
+  PRIVATE
+  PUBLIC
 }
 
 enum ShoppingItemSource {
@@ -36,19 +43,22 @@ enum ShoppingItemStatus {
 }
 
 model User {
-  id                String            @id @default(cuid())
-  workosUserId      String            @unique
-  email             String            @unique
+  id                String             @id @default(cuid())
+  workosUserId      String             @unique
+  email             String             @unique
   displayName       String?
   households        HouseholdMember[]
   mealPlans         MealPlan[]
   pantryItems       PantryItem[]
   recipes           Recipe[]
+  recipeRevisions   RecipeRevision[]
+  savedRecipes      SavedRecipe[]
+  recipeCollections RecipeCollection[]
   shoppingLists     ShoppingList[]
-  ownedHouseholds   Household[]       @relation("HouseholdOwner")
-  personalHousehold Household?        @relation("PersonalHousehold")
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  ownedHouseholds   Household[]        @relation("HouseholdOwner")
+  personalHousehold Household?         @relation("PersonalHousehold")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 }
 
 model Household {
@@ -82,45 +92,121 @@ model HouseholdMember {
 }
 
 model Recipe {
-  id          String             @id @default(cuid())
-  householdId String
-  createdById String
-  title       String
-  description String?
-  servings    Int                @default(1)
-  tags        String[]           @default([])
-  household   Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  createdBy   User               @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  ingredients RecipeIngredient[]
-  steps       RecipeStep[]
-  plannedIn   MealPlanEntry[]
-  listItems   ShoppingListItem[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id               String                 @id @default(cuid())
+  householdId      String
+  createdById      String
+  title            String
+  description      String?
+  servings         Int                    @default(1)
+  totalTimeMinutes Int?
+  tags             String[]               @default([])
+  imageUrl         String?
+  visibility       RecipeVisibility       @default(PRIVATE)
+  publishedAt      DateTime?
+  deletedAt        DateTime?
+  latestRevisionId String?
+  sourceRecipeId   String?
+  sourceRevisionId String?
+  sourceAuthorId   String?
+  sourceAuthorName String?
+  household        Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy        User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  ingredients      RecipeIngredient[]
+  steps            RecipeStep[]
+  revisions        RecipeRevision[]
+  saves            SavedRecipe[]
+  collectionItems  RecipeCollectionItem[]
+  plannedIn        MealPlanEntry[]
+  listItems        ShoppingListItem[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([sourceRecipeId])
+}
+
+model RecipeRevision {
+  id             String          @id @default(cuid())
+  recipeId       String
+  publishedById  String
+  version        Int
+  snapshot       Json
+  recipe         Recipe          @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  publishedBy    User            @relation(fields: [publishedById], references: [id], onDelete: Restrict)
+  plannedEntries MealPlanEntry[]
+  createdAt      DateTime        @default(now())
+
+  @@unique([recipeId, version])
+  @@index([recipeId, createdAt])
 }
 
 model RecipeIngredient {
-  id        String   @id @default(cuid())
-  recipeId  String
-  name      String
-  quantity  Decimal? @db.Decimal(10, 2)
-  unit      String?
-  position  Int
-  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String   @id @default(cuid())
+  recipeId          String
+  name              String
+  quantity          Decimal? @db.Decimal(10, 2)
+  unit              String?
+  unitId            String?
+  notes             String?
+  component         String?
+  componentId       String?
+  componentPosition Int?
+  position          Int
+  recipe            Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([recipeId, position])
 }
 
+model SavedRecipe {
+  userId             String
+  recipeId           String
+  lastSeenRevisionId String?
+  savedAt            DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe             Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, recipeId])
+  @@index([recipeId])
+}
+
+model RecipeCollection {
+  id        String                 @id @default(cuid())
+  userId    String
+  name      String
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     RecipeCollectionItem[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@unique([userId, name])
+}
+
+model RecipeCollectionItem {
+  collectionId String
+  recipeId     String
+  position     Int
+  collection   RecipeCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  recipe       Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, recipeId])
+  @@index([collectionId, position])
+  @@index([recipeId])
+}
+
 model RecipeStep {
-  id          String   @id @default(cuid())
-  recipeId    String
-  instruction String
-  position    Int
-  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  recipeId          String
+  instruction       String
+  component         String?
+  componentId       String?
+  componentPosition Int?
+  durationMinutes   Int?
+  advanceNotice     Boolean  @default(false)
+  position          Int
+  recipe            Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([recipeId, position])
 }
@@ -141,16 +227,18 @@ model MealPlan {
 }
 
 model MealPlanEntry {
-  id               String   @id @default(cuid())
+  id               String          @id @default(cuid())
   mealPlanId       String
   recipeId         String
+  recipeRevisionId String?
   date             DateTime
   mealType         MealType
   servingsOverride Int?
-  mealPlan         MealPlan @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
-  recipe           Recipe   @relation(fields: [recipeId], references: [id], onDelete: Restrict)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  mealPlan         MealPlan        @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipe           Recipe          @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipeRevision   RecipeRevision? @relation(fields: [recipeRevisionId], references: [id], onDelete: Restrict)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@unique([mealPlanId, date, mealType])
 }
@@ -176,6 +264,7 @@ model ShoppingListItem {
   ingredientName String
   quantity       Decimal?           @db.Decimal(10, 2)
   unit           String?
+  unitId         String?
   source         ShoppingItemSource @default(AUTO)
   status         ShoppingItemStatus @default(PENDING)
   shoppingList   ShoppingList       @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
@@ -191,11 +280,14 @@ model PantryItem {
   ingredientName String
   quantity       Decimal   @db.Decimal(10, 2)
   unit           String
+  unitId         String?
+  unitKey        String
   expiresAt      DateTime?
   household      Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   user           User      @relation(fields: [userId], references: [id], onDelete: Restrict)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  @@unique([householdId, ingredientName, unit])
+  @@unique([householdId, ingredientName, unitKey])
+  @@index([householdId, ingredientName, unitId])
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { getUnitStorageKey, normalizeUnitInput } from "@/lib/units";
 
 export default async function PantryPage() {
   const { userId, organizationId } = await requireAppAuthContext();
@@ -52,24 +53,31 @@ export default async function PantryPage() {
       throw new Error("No household found for this user.");
     }
 
+    const normalizedUnit = normalizeUnitInput(unitValue);
+    const storedUnit = normalizedUnit.unit ?? unitValue.trim();
+
     await prisma.pantryItem.upsert({
       where: {
-        householdId_ingredientName_unit: {
+        householdId_ingredientName_unitKey: {
           householdId: activeMembership.householdId,
           ingredientName: ingredientName.trim(),
-          unit: unitValue.trim(),
+          unitKey: getUnitStorageKey(storedUnit, normalizedUnit.unitId),
         },
       },
       update: {
         quantity,
         userId: context.userId,
+        unitId: normalizedUnit.unitId,
+        unitKey: getUnitStorageKey(storedUnit, normalizedUnit.unitId),
       },
       create: {
         householdId: activeMembership.householdId,
         userId: context.userId,
         ingredientName: ingredientName.trim(),
         quantity,
-        unit: unitValue.trim(),
+        unit: storedUnit,
+        unitId: normalizedUnit.unitId,
+        unitKey: getUnitStorageKey(storedUnit, normalizedUnit.unitId),
       },
     });
 

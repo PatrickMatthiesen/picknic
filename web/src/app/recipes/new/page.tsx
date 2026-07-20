@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
-import { AppPageShell } from "@/app/_components/page-shell";
+import { AppNav } from "@/app/_components/app-nav";
 import { RecipeEditorClient } from "./recipe-editor-client";
 
 export default async function NewRecipePage() {
@@ -24,21 +24,5 @@ export default async function NewRecipePage() {
     );
   }
 
-  return (
-    <AppPageShell
-      currentPath="/recipes"
-      title="Create recipe"
-      subtitle="Start manually, parse from copy paste, or choose upcoming URL/image import options."
-      maxWidthClassName="max-w-5xl"
-      headerChildren={
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link className="app-theme-link rounded-full px-4 py-2" href="/recipes">
-            Back to recipes
-          </Link>
-        </div>
-      }
-    >
-      <RecipeEditorClient />
-    </AppPageShell>
-  );
+  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient /></main>;
 }
