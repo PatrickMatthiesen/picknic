@@ -21,10 +21,7 @@ var githubModelsEndpoint = builder.AddParameter(
 var workosClientId = builder.AddParameter("workos-client-id");
 var workosApiKey = builder.AddParameter("workos-api-key", secret: true);
 var workosCookiePassword = builder.AddParameter("workos-cookie-password", secret: true);
-var workosRedirectUri = builder.AddParameter(
-    "workos-redirect-uri",
-    "http://localhost:5333/callback"
-);
+var workosRedirectUri = builder.AddParameter("workos-redirect-uri");
 
 var postgres = builder.AddPostgres("postgres")
     .WithLifetime(ContainerLifetime.Persistent)
