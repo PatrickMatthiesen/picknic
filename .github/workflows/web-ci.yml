@@ -43,6 +43,10 @@ jobs:
       WORKOS_COOKIE_PASSWORD: ci-only-cookie-password-at-least-32-characters
       NEXT_PUBLIC_WORKOS_REDIRECT_URI: http://localhost:5333/callback
       WORKOS_REDIRECT_URI: http://localhost:5333/callback
+      Parameters__workos_api_key: sk_test_ci_placeholder
+      Parameters__workos_client_id: client_ci_placeholder
+      Parameters__workos_cookie_password: ci-only-cookie-password-at-least-32-characters
+      Parameters__workos_redirect_uri: http://localhost:5333/callback
 
     steps:
       - name: Checkout
