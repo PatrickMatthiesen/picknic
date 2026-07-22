@@ -8,6 +8,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lock
 FROM dependencies AS migrations
 COPY prisma ./prisma
 COPY prisma.config.ts ./
+COPY src/lib/database-config.ts ./src/lib/database-config.ts
 ENV NODE_ENV=production
 ENTRYPOINT ["bun", "run", "prisma:migrate:deploy"]
 
