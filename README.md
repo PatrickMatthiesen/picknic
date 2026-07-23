@@ -57,13 +57,26 @@ PostgreSQL uses the named Docker volume `picknic-postgres`, so stopping Aspire d
 
 ## Optional AI recipe import
 
-Authentication does not require AI credentials. To enable AI-assisted recipe parsing, store the token as an Aspire parameter:
+AI-assisted recipe parsing uses the `ai-proxy` CLIProxyAPI resource in Aspire. Picknic
+uses the provider-neutral `AI_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` settings and defaults
+to the small `gpt-5.4-mini` model.
 
-```sh
-aspire secret set "Parameters:github-models-api-key" "<GITHUB_MODELS_API_KEY>"
+Sign in to Codex once with device authentication. Aspire does not need to be running for
+this command. The config bind mount supplies CLIProxyAPI's required configuration, while
+the named Docker volume preserves the OAuth credentials across Aspire restarts:
+
+```powershell
+docker run --rm -it `
+  -v picknic-cliproxy-auth:/root/.cli-proxy-api `
+  --mount "type=bind,source=$PWD\apphost\cliproxyapi\config.yaml,target=/CLIProxyAPI/config.yaml,readonly" `
+  eceasy/cli-proxy-api:v7.2.97 `
+  ./CLIProxyAPI --codex-device-login
 ```
 
-The model and endpoint default to `openai/gpt-5-mini` and `https://models.github.ai/inference`. Without the API-key parameter, the rest of the application remains available and recipe parsing reports that AI import is not configured.
+The internal proxy API key defaults to `picknic-local-ai`; it is not an OpenAI credential.
+`Parameters:ai-model` is the preferred model. Picknic checks `/v1/models` before parsing:
+it uses that preference when available, otherwise it deterministically selects the newest
+available small GPT model, then the newest text GPT model, then another non-media model.
 
 ## Validate changes
 
@@ -73,7 +86,7 @@ Run the repository checks from the root:
 bun run check
 ```
 
-CI performs a frozen Bun install, Prisma generation and schema validation, typechecking, tests, linting, a production build, and a high-severity dependency audit. In that same job, it installs the dev-channel Aspire CLI, starts the file-based AppHost in isolation, waits for an Aspire-provisioned PostgreSQL database and the web app, verifies migrations against that database, checks the live public and unauthorized API behavior, and then stops Aspire. Required CI checks do not receive real WorkOS or GitHub Models secrets; a real WorkOS sign-in remains an optional staging smoke test.
+CI performs a frozen Bun install, Prisma generation and schema validation, typechecking, tests, linting, a production build, and a high-severity dependency audit. In that same job, it installs the dev-channel Aspire CLI, starts the file-based AppHost in isolation, waits for an Aspire-provisioned PostgreSQL database and the web app, verifies migrations against that database, checks the live public and unauthorized API behavior, and then stops Aspire. Required CI checks do not receive real WorkOS or AI provider credentials; a real WorkOS sign-in remains an optional staging smoke test.
 
 ## Deployment
 
@@ -85,8 +98,20 @@ Create a GitHub environment named `Production` with these secrets:
 - `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`
 - `PICKNIC_POSTGRES_PASSWORD`
 - `PICKNIC_WORKOS_CLIENT_ID`, `PICKNIC_WORKOS_API_KEY`, and `PICKNIC_WORKOS_COOKIE_PASSWORD`
-- `PICKNIC_GITHUB_MODELS_API_KEY`
 
-Add `PICKNIC_WORKOS_REDIRECT_URI` as an environment variable containing the complete public callback URL, such as `https://picknic.example.com/callback`. Optionally override `PICKNIC_GITHUB_MODELS_ENDPOINT`; it defaults to GitHub Models.
+Add `PICKNIC_WORKOS_REDIRECT_URI` as an environment variable containing the complete public callback URL, such as `https://picknic.example.com/callback`. Optionally set `PICKNIC_AI_MODEL` to override the default model. The deployed `ai-proxy` uses the persistent `picknic-cliproxy-auth` Docker volume; complete its Codex device login on the Docker host before using AI recipe import. Picknic checks the proxy model catalog and only renders the import control when a usable text model is available.
+
+For a deployed environment, run the login inside its existing proxy container. This uses
+the config baked into the deployed image and the correct Compose-managed OAuth volume:
+
+```sh
+ai_proxy_id="$(docker ps -q \
+  --filter label=com.docker.compose.service=ai-proxy \
+  | sed -n '1p')"
+test -n "$ai_proxy_id"
+
+docker exec -it "$ai_proxy_id" ./CLIProxyAPI --codex-device-login
+docker restart "$ai_proxy_id"
+```
 
 The Docker host needs Docker 28 or newer with Compose, and the tailnet policy must allow `tag:ci` to reach it over SSH. Configure the reverse proxy to forward the public HTTPS site to `http://<docker-host>:5333`, and configure the same callback URL plus the public sign-in and logout URLs in the WorkOS environment.

@@ -1,6 +1,6 @@
 ARG FINAL_STAGE=runtime
 
-FROM oven/bun:1 AS dependencies
+FROM oven/bun:1.3.7 AS dependencies
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
@@ -18,7 +18,7 @@ ARG NEXT_PUBLIC_WORKOS_REDIRECT_URI
 ENV NEXT_PUBLIC_WORKOS_REDIRECT_URI=$NEXT_PUBLIC_WORKOS_REDIRECT_URI
 RUN bun run prisma:generate && bun run build
 
-FROM oven/bun:1 AS runtime
+FROM oven/bun:1.3.7 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build --chown=bun:bun /app/public ./public

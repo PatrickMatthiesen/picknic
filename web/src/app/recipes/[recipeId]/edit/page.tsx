@@ -2,6 +2,7 @@ import { RecipeVisibility } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { AppNav } from "@/app/_components/app-nav";
 import { RecipeEditorClient, type RecipeDraft } from "@/app/recipes/new/recipe-editor-client";
+import { isAiRecipeImportAvailable } from "@/lib/ai-config";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
 
@@ -56,5 +57,5 @@ export default async function EditRecipePage({ params }: PageProps) {
     ingredientComponents: ingredientComponents.length ? ingredientComponents : [{ id: "ingredient-component-initial", name: "", ingredients: [] }],
     instructionComponents: instructionComponents.length ? instructionComponents : [{ id: "instruction-component-initial", name: "", steps: [] }],
   };
-  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient initialDraft={draft} recipeId={recipeId} /></main>;
+  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={await isAiRecipeImportAvailable()} initialDraft={draft} recipeId={recipeId} /></main>;
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
-import { parseRecipeWithGitHubModels, RecipeParserNotConfiguredError } from "@/lib/recipe-parser";
+import { parseRecipeWithAi, RecipeParserNotConfiguredError } from "@/lib/recipe-parser";
 
 type ParsePayload = { text?: unknown };
 
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const recipe = await parseRecipeWithGitHubModels(text);
+    const recipe = await parseRecipeWithAi(text);
     return NextResponse.json({ data: recipe });
   } catch (error) {
     if (error instanceof RecipeParserNotConfiguredError) {

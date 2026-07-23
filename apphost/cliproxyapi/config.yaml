@@ -1,0 +1,20 @@
+host: ""
+port: 8317
+
+remote-management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: true
+
+auth-dir: "~/.cli-proxy-api"
+
+# This key only protects the internal Aspire service boundary. Provider
+# credentials are stored separately in the persistent OAuth volume.
+api-keys:
+  - "picknic-local-ai"
+
+debug: false
+logging-to-file: false
+usage-statistics-enabled: false
+request-retry: 3
+ws-auth: true

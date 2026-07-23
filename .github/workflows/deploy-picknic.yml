@@ -43,8 +43,7 @@ jobs:
 
       - name: Publish Docker Compose artifacts
         env:
-          Parameters__github_models_api_key: ${{ secrets.PICKNIC_GITHUB_MODELS_API_KEY }}
-          Parameters__github_models_endpoint: ${{ vars.PICKNIC_GITHUB_MODELS_ENDPOINT || 'https://models.github.ai/inference' }}
+          Parameters__ai_model: ${{ vars.PICKNIC_AI_MODEL || 'gpt-5.4-mini' }}
           Parameters__postgres_password: ${{ secrets.PICKNIC_POSTGRES_PASSWORD }}
           Parameters__workos_api_key: ${{ secrets.PICKNIC_WORKOS_API_KEY }}
           Parameters__workos_client_id: ${{ secrets.PICKNIC_WORKOS_CLIENT_ID }}
@@ -74,8 +73,7 @@ jobs:
           ASPIRE_CONTAINER_RUNTIME: docker
           DEPLOY_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_USER: ${{ secrets.SSH_USER }}
-          Parameters__github_models_api_key: ${{ secrets.PICKNIC_GITHUB_MODELS_API_KEY }}
-          Parameters__github_models_endpoint: ${{ vars.PICKNIC_GITHUB_MODELS_ENDPOINT || 'https://models.github.ai/inference' }}
+          Parameters__ai_model: ${{ vars.PICKNIC_AI_MODEL || 'gpt-5.4-mini' }}
           Parameters__postgres_password: ${{ secrets.PICKNIC_POSTGRES_PASSWORD }}
           Parameters__workos_api_key: ${{ secrets.PICKNIC_WORKOS_API_KEY }}
           Parameters__workos_client_id: ${{ secrets.PICKNIC_WORKOS_CLIENT_ID }}
@@ -96,7 +94,7 @@ jobs:
           project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$web_id")"
           test -n "$project"
 
-          for service in web postgres; do
+          for service in web postgres ai-proxy; do
             container_id="$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$service" | sed -n '1p')"
             test -n "$container_id"
             test "$(docker inspect --format '{{.State.Status}}' "$container_id")" = "running"

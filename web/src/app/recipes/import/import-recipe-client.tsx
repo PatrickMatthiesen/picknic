@@ -100,7 +100,7 @@ export function ImportRecipeClient() {
           onClick={parseRecipe}
           type="button"
         >
-          {isParsing ? "Parsing..." : "Parse with GitHub Models"}
+          {isParsing ? "Parsing..." : "Parse with AI"}
         </button>
       </section>
 

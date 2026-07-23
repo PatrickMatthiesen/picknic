@@ -11,12 +11,16 @@ var builder = DistributedApplication.CreateBuilder(args);
 var compose = builder.AddDockerComposeEnvironment("picknic")
     .WithDashboard(enabled: false);
 
-var githubModelsModel = builder.AddParameter("github-models-model", "openai/gpt-5-mini", publishValueAsDefault: true);
-var githubModelsEndpoint = builder.AddParameter(
-    "github-models-endpoint",
-    "https://models.github.ai/inference",
-    publishValueAsDefault: true
-);
+var aiModel = builder.AddParameter("ai-model", "gpt-5.4-mini", publishValueAsDefault: true);
+var aiApiKey = builder.AddParameter("ai-api-key", "picknic-local-ai", publishValueAsDefault: true);
+
+var aiProxy = builder.AddDockerfile("ai-proxy", "cliproxyapi")
+    .WithHttpEndpoint(targetPort: 8317, name: "http")
+    .WithHttpHealthCheck("/healthz", endpointName: "http")
+    .WithVolume("picknic-cliproxy-auth", "/root/.cli-proxy-api")
+    .PublishAsDockerComposeService((_, service) => service.Restart = "unless-stopped");
+
+var aiBaseUrl = ReferenceExpression.Create($"{aiProxy.GetEndpoint("http")}/v1");
 
 var workosClientId = builder.AddParameter("workos-client-id");
 var workosApiKey = builder.AddParameter("workos-api-key", secret: true);
@@ -50,23 +54,21 @@ var migrations = builder.AddJavaScriptApp("migrations", "../web", "prisma:migrat
 var web = builder.AddNextJsApp("web", "../web")
     .WithHttpEndpoint(port: 5333, env: "PORT")
     .WithHttpHealthCheck("/", endpointName: "http")
+    .WithOtlpExporter()
     .WithBun(install: false)
     .WithExternalHttpEndpoints()
     .PublishAsDockerComposeService((_, service) => service.Restart = "unless-stopped")
     .WithReference(picknicdb)
-    .WithEnvironment("GITHUB_MODELS_MODEL", githubModelsModel)
-    .WithEnvironment("GITHUB_MODELS_ENDPOINT", githubModelsEndpoint)
+    .WithEnvironment("AI_BASE_URL", aiBaseUrl)
+    .WithEnvironment("AI_API_KEY", aiApiKey)
+    .WithEnvironment("AI_MODEL", aiModel)
     .WithEnvironment("WORKOS_CLIENT_ID", workosClientId)
     .WithEnvironment("WORKOS_API_KEY", workosApiKey)
     .WithEnvironment("WORKOS_COOKIE_PASSWORD", workosCookiePassword)
     .WithEnvironment("NEXT_PUBLIC_WORKOS_REDIRECT_URI", workosRedirectUri)
+    .WaitFor(aiProxy)
     .WaitForCompletion(migrations);
 
-if (!string.IsNullOrWhiteSpace(builder.Configuration["Parameters:github-models-api-key"]))
-{
-    var githubModelsApiKey = builder.AddParameter("github-models-api-key", secret: true);
-    web.WithEnvironment("GITHUB_MODELS_API_KEY", githubModelsApiKey);
-}
 #pragma warning restore ASPIREJAVASCRIPT001
 
 if (builder.ExecutionContext.IsPublishMode &&

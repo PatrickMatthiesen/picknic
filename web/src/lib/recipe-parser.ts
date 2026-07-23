@@ -1,4 +1,7 @@
+import { SpanStatusCode, trace, type Span } from "@opentelemetry/api";
 import OpenAI from "openai";
+import { selectAvailableAiModel } from "@/lib/ai-model";
+import { logAiEvent } from "@/lib/ai-telemetry";
 
 export type ParsedRecipeDraft = {
   title: string;
@@ -15,10 +18,30 @@ export type ParsedRecipeDraft = {
 };
 
 export class RecipeParserNotConfiguredError extends Error {
-  constructor() {
-    super("AI recipe import is not configured for this environment.");
+  constructor(message = "AI recipe import is not configured for this environment.") {
+    super(message);
     this.name = "RecipeParserNotConfiguredError";
   }
+}
+
+const tracer = trace.getTracer("picknic.recipe-parser");
+
+function elapsedMilliseconds(startedAt: number): number {
+  return Math.round(performance.now() - startedAt);
+}
+
+function endpointHost(endpoint: string): string {
+  try {
+    return new URL(resolveBaseUrl(endpoint)).host;
+  } catch {
+    return "invalid";
+  }
+}
+
+function recordSpanError(span: Span, error: unknown): void {
+  const exception = error instanceof Error ? error : new Error(String(error));
+  span.recordException(exception);
+  span.setStatus({ code: SpanStatusCode.ERROR, message: exception.message });
 }
 
 function extractJson(text: string): unknown {
@@ -81,37 +104,216 @@ function resolveBaseUrl(endpoint: string): string {
     : trimmed;
 }
 
-export async function parseRecipeWithGitHubModels(rawText: string): Promise<ParsedRecipeDraft> {
-  const apiKey = process.env.GITHUB_MODELS_API_KEY ?? process.env.GITHUB_TOKEN;
-  if (!apiKey) {
-    throw new RecipeParserNotConfiguredError();
-  }
-
-  const endpoint = process.env.GITHUB_MODELS_ENDPOINT ?? "https://models.github.ai/inference";
-  const model = process.env.GITHUB_MODELS_MODEL ?? "openai/gpt-4.1-mini";
-  const client = new OpenAI({
-    apiKey,
-    baseURL: resolveBaseUrl(endpoint),
-  });
-
-  const completion = await client.chat.completions.create({
-    model,
-    temperature: 1,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content:
-          "You extract recipes into strict JSON with keys: title (string), description (string), servings (number), tags (string[]), measurementSystem ('metric' | 'us' | null), ingredients ({name, quantity, unit}[]), steps (string[]). Preserve the recipe's written quantities and units. Return only JSON.",
+const recipeResponseFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "recipe",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        description: { type: "string" },
+        servings: { type: "number" },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+        },
+        measurementSystem: {
+          anyOf: [
+            { type: "string", enum: ["metric", "us"] },
+            { type: "null" },
+          ],
+        },
+        ingredients: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              quantity: {
+                anyOf: [{ type: "number" }, { type: "null" }],
+              },
+              unit: {
+                anyOf: [{ type: "string" }, { type: "null" }],
+              },
+            },
+            required: ["name", "quantity", "unit"],
+            additionalProperties: false,
+          },
+        },
+        steps: {
+          type: "array",
+          items: { type: "string" },
+        },
       },
-      {
-        role: "user",
-        content: rawText,
-      },
-    ],
-  });
+      required: [
+        "title",
+        "description",
+        "servings",
+        "tags",
+        "measurementSystem",
+        "ingredients",
+        "steps",
+      ],
+      additionalProperties: false,
+    },
+  },
+} as const;
 
-  const content = completion.choices[0]?.message?.content ?? "";
-  const parsed = extractJson(content);
-  return normalizeDraft(parsed);
+async function resolveModel(client: OpenAI, preferredModel: string): Promise<string> {
+  return tracer.startActiveSpan("ai.models.list", async (span) => {
+    const startedAt = performance.now();
+    span.setAttribute("ai.preferred_model", preferredModel);
+
+    try {
+      const availableModels = await client.models.list();
+      const model = selectAvailableAiModel(
+        preferredModel,
+        availableModels.data.map((entry) => entry.id),
+      );
+      if (!model) {
+        throw new RecipeParserNotConfiguredError(
+          "The AI proxy has no available text models. Complete provider login and try again.",
+        );
+      }
+
+      const durationMs = elapsedMilliseconds(startedAt);
+      span.setAttributes({
+        "ai.available_model_count": availableModels.data.length,
+        "ai.selected_model": model,
+        "ai.duration_ms": durationMs,
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      logAiEvent("info", "Model selected", {
+        preferredModel,
+        selectedModel: model,
+        availableModelCount: availableModels.data.length,
+        durationMs,
+      });
+
+      if (model !== preferredModel) {
+        logAiEvent("warn", "Configured AI model unavailable; using fallback", {
+          preferredModel,
+          selectedModel: model,
+        });
+      }
+
+      return model;
+    } catch (error) {
+      recordSpanError(span, error);
+      if (error instanceof RecipeParserNotConfiguredError) {
+        throw error;
+      }
+
+      logAiEvent("warn", "Model discovery failed; using configured preference", {
+        preferredModel,
+        durationMs: elapsedMilliseconds(startedAt),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return preferredModel;
+    } finally {
+      span.end();
+    }
+  });
+}
+
+export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDraft> {
+  return tracer.startActiveSpan("recipe.parse", async (span) => {
+    const startedAt = performance.now();
+    const apiKey = process.env.AI_API_KEY;
+    if (!apiKey) {
+      const error = new RecipeParserNotConfiguredError();
+      recordSpanError(span, error);
+      span.end();
+      throw error;
+    }
+
+    const endpoint = process.env.AI_BASE_URL ?? "http://localhost:8317/v1";
+    const preferredModel = process.env.AI_MODEL ?? "gpt-5.4-mini";
+    const host = endpointHost(endpoint);
+    span.setAttributes({
+      "ai.gateway": host,
+      "ai.preferred_model": preferredModel,
+      "recipe.input_character_count": rawText.length,
+    });
+
+    try {
+      const client = new OpenAI({
+        apiKey,
+        baseURL: resolveBaseUrl(endpoint),
+      });
+      const model = await resolveModel(client, preferredModel);
+      span.setAttribute("ai.selected_model", model);
+
+      const completion = await tracer.startActiveSpan("ai.chat.completion", async (completionSpan) => {
+        const completionStartedAt = performance.now();
+        completionSpan.setAttributes({
+          "ai.gateway": host,
+          "ai.model": model,
+        });
+
+        try {
+          const result = await client.chat.completions.create({
+            model,
+            response_format: recipeResponseFormat,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You extract recipes into strict JSON with keys: title (string), description (string), servings (number), tags (string[]), measurementSystem ('metric' | 'us' | null), ingredients ({name, quantity, unit}[]), steps (string[]). Preserve the recipe's written quantities and units. Return only JSON.",
+              },
+              {
+                role: "user",
+                content: rawText,
+              },
+            ],
+          });
+          const durationMs = elapsedMilliseconds(completionStartedAt);
+          completionSpan.setAttribute("ai.duration_ms", durationMs);
+          completionSpan.setStatus({ code: SpanStatusCode.OK });
+          logAiEvent("info", "Recipe completion finished", {
+            model,
+            gateway: host,
+            durationMs,
+          });
+          return result;
+        } catch (error) {
+          recordSpanError(completionSpan, error);
+          throw error;
+        } finally {
+          completionSpan.end();
+        }
+      });
+
+      const content = completion.choices[0]?.message?.content ?? "";
+      const parsed = normalizeDraft(extractJson(content));
+      const durationMs = elapsedMilliseconds(startedAt);
+      span.setAttributes({
+        "recipe.ingredient_count": parsed.ingredients.length,
+        "recipe.step_count": parsed.steps.length,
+        "recipe.parse.duration_ms": durationMs,
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      logAiEvent("info", "Recipe parsed", {
+        model,
+        gateway: host,
+        durationMs,
+        ingredientCount: parsed.ingredients.length,
+        stepCount: parsed.steps.length,
+      });
+      return parsed;
+    } catch (error) {
+      recordSpanError(span, error);
+      logAiEvent("error", "Recipe parsing failed", {
+        preferredModel,
+        gateway: host,
+        durationMs: elapsedMilliseconds(startedAt),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
 }

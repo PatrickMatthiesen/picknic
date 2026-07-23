@@ -183,11 +183,16 @@ function SortableEditorRow({ children, className, disabled = false, handleLabel,
 }
 
 type RecipeEditorClientProps = {
+  aiRecipeImportEnabled?: boolean;
   initialDraft?: RecipeDraft;
   recipeId?: string;
 };
 
-export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: RecipeEditorClientProps) {
+export function RecipeEditorClient({
+  aiRecipeImportEnabled = false,
+  initialDraft = EMPTY_DRAFT,
+  recipeId,
+}: RecipeEditorClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const storageKey = `picknic:recipe-draft:${recipeId ?? "new"}`;
@@ -195,7 +200,9 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
   const [draft, setDraft] = useState(preparedInitialDraft);
   const [tagsText, setTagsText] = useState(initialDraft.tags.join(", "));
   const [sourceText, setSourceText] = useState("");
-  const [showImport, setShowImport] = useState(searchParams.get("method") === "copy-paste");
+  const [showImport, setShowImport] = useState(
+    aiRecipeImportEnabled && searchParams.get("method") === "copy-paste",
+  );
   const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -517,7 +524,7 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
         <header className="recipe-authoring-header">
           <Link className="recipe-authoring-back" href="/recipes"><ArrowLeft aria-hidden="true" size={18} /> <span>{recipeId ? "Edit recipe" : "Create recipe"}</span></Link>
           <div className="recipe-authoring-header-actions">
-            <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Paste recipe</button>
+            {aiRecipeImportEnabled ? <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Paste recipe</button> : null}
             <details className="recipe-authoring-actions-menu" ref={actionsMenuRef}>
               <summary aria-label="More recipe actions" title="More recipe actions"><MoreHorizontal aria-hidden="true" size={18} /></summary>
               <div><button onClick={clearRecipe} type="button"><Trash2 aria-hidden="true" size={16} /> {recipeId ? "Discard local changes" : "Clear recipe"}</button></div>
@@ -532,7 +539,7 @@ export function RecipeEditorClient({ initialDraft = EMPTY_DRAFT, recipeId }: Rec
           <textarea id="recipe-description" maxLength={600} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Describe what makes this recipe worth cooking…" rows={2} value={draft.description} />
         </section>
 
-        {showImport ? (
+        {aiRecipeImportEnabled && showImport ? (
           <section className="recipe-import-panel">
             <div>
               <label htmlFor="recipe-source">Paste the recipe text</label>

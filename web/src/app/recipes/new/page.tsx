@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
+import { isAiRecipeImportAvailable } from "@/lib/ai-config";
 import { AppNav } from "@/app/_components/app-nav";
 import { RecipeEditorClient } from "./recipe-editor-client";
 
@@ -24,5 +25,5 @@ export default async function NewRecipePage() {
     );
   }
 
-  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient /></main>;
+  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={await isAiRecipeImportAvailable()} /></main>;
 }
