@@ -2,6 +2,7 @@ import { SpanStatusCode, trace, type Span } from "@opentelemetry/api";
 import OpenAI from "openai";
 import { selectAvailableAiModel } from "@/lib/ai-model";
 import { logAiEvent } from "@/lib/ai-telemetry";
+import { getRecipeUnitVocabulary } from "@/lib/units";
 
 export type ParsedRecipeDraft = {
   title: string;
@@ -255,7 +256,12 @@ export const recipeResponseFormat = {
 
 export const RECIPE_EXTRACTION_INSTRUCTIONS = [
   "Extract the pasted recipe into the supplied strict JSON schema.",
-  "Preserve written quantities and units; do not convert measurement systems.",
+  "Preserve written measurements; do not convert measurement systems.",
+  `For ingredient units, prefer these canonical unit strings when the written unit unambiguously matches one of them: ${getRecipeUnitVocabulary()}.`,
+  "If the written unit does not fit that vocabulary, preserve it as a custom unit string instead of dropping or inventing a replacement.",
+  "Quantity contains only a numeric amount and may be null. Unit may independently be null when the source has no unit.",
+  "Treat descriptive sizes such as large or small as part of the ingredient name or notes, not as units.",
+  "For qualitative measurements, preserve the unit separately: for example, 'tiny pinch of sugar' becomes quantity null, unit 'pinch', notes 'tiny'; 'salt, to taste' becomes quantity null, unit null, notes 'to taste'.",
   "Preserve named ingredient and instruction groups as components instead of prefixing their names into rows.",
   "Put preparation qualifiers that belong to one ingredient (for example finely chopped, divided, or room temperature) in that ingredient's notes.",
   "Put general serving, substitution, storage, or variation notes in the recipe-level notes field, never as an instruction.",
@@ -265,6 +271,8 @@ export const RECIPE_EXTRACTION_INSTRUCTIONS = [
   "Only return imageUrl when an image URL is explicitly present in the source; otherwise use null.",
   "Do not invent missing recipe facts. Return only JSON.",
 ].join(" ");
+
+export const RECIPE_REASONING_EFFORT = "low" as const;
 
 async function resolveModel(client: OpenAI, preferredModel: string): Promise<string> {
   return tracer.startActiveSpan("ai.models.list", async (span) => {
@@ -356,11 +364,13 @@ export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDr
         completionSpan.setAttributes({
           "ai.gateway": host,
           "ai.model": model,
+          "ai.reasoning_effort": RECIPE_REASONING_EFFORT,
         });
 
         try {
           const result = await client.chat.completions.create({
             model,
+            reasoning_effort: RECIPE_REASONING_EFFORT,
             response_format: recipeResponseFormat,
             messages: [
               {
@@ -379,6 +389,7 @@ export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDr
           logAiEvent("info", "Recipe completion finished", {
             model,
             gateway: host,
+            reasoningEffort: RECIPE_REASONING_EFFORT,
             durationMs,
           });
           return result;

@@ -4,13 +4,14 @@ import Link from "next/link";
 import { BookOpen, CalendarDays, ChefHat, PackageOpen, ShoppingBasket, SunMoon } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { signOutAction } from "@/app/_actions/auth-actions";
+import { SmallSelect, type SmallSelectOption } from "@/app/_components/small-select";
 import {
   applyThemeChoice,
   getThemeChoiceServerSnapshot,
   getThemeChoiceSnapshot,
   setThemeChoice,
   subscribeThemeChoice,
-  THEME_CHOICES,
+  type ThemeChoice,
 } from "@/lib/theme-choice";
 
 const NAV_ITEMS = [
@@ -19,6 +20,12 @@ const NAV_ITEMS = [
   { href: "/cook", label: "Cook", icon: ChefHat },
   { href: "/shopping-list", label: "Shopping", icon: ShoppingBasket },
   { href: "/pantry", label: "Pantry", icon: PackageOpen },
+];
+
+const THEME_OPTIONS: readonly SmallSelectOption<ThemeChoice>[] = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
 ];
 
 function isActive(currentPath: string, href: string) {
@@ -43,13 +50,13 @@ export function AppNav({ currentPath }: { currentPath: string }) {
           ))}
         </nav>
         <div className="app-sidebar-tools">
-          <label className="app-theme-select">
-            <SunMoon aria-hidden="true" size={17} />
-            <span className="sr-only">UI theme</span>
-            <select value={theme} onChange={(event) => setThemeChoice(event.target.value as typeof theme)}>
-              {THEME_CHOICES.map((choice) => <option key={choice}>{choice}</option>)}
-            </select>
-          </label>
+          <SmallSelect
+            ariaLabel="UI theme"
+            icon={<SunMoon aria-hidden="true" size={17} />}
+            onChange={setThemeChoice}
+            options={THEME_OPTIONS}
+            value={theme}
+          />
           <form action={signOutAction}>
             <button className="app-nav-signout" type="submit">Sign out</button>
           </form>

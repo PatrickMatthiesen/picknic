@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   formatMeasurement,
+  getRecipeUnitVocabulary,
   getUnitStorageKey,
   inferMeasurementSystem,
   inferSourceMeasurementSystem,
@@ -18,6 +19,18 @@ describe("recipe units", () => {
 
   test("keeps custom units without assigning a catalog id", () => {
     expect(normalizeUnitInput("small jar")).toEqual({ unit: "small jar", unitId: null });
+  });
+
+  test("recognizes common non-convertible recipe units", () => {
+    expect(normalizeUnitInput("loaves")).toEqual({ unit: "loaf", unitId: "count-loaf" });
+    expect(normalizeUnitInput("heads")).toEqual({ unit: "head", unitId: "count-head" });
+  });
+
+  test("builds model guidance from canonical and custom-friendly units", () => {
+    const vocabulary = getRecipeUnitVocabulary();
+    expect(vocabulary).toContain("pinch");
+    expect(vocabulary).toContain("loaf");
+    expect(vocabulary).toContain("head");
   });
 
   test("infers a display system from locale", () => {

@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "bun test",
+    "test:ai": "bun run evals/recipe-parser.live.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check": "bun run prisma:generate && bun run typecheck && bun run test && bun run lint && bun run build",

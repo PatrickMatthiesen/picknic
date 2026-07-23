@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   normalizeParsedRecipeDraft,
   RECIPE_EXTRACTION_INSTRUCTIONS,
+  RECIPE_REASONING_EFFORT,
   recipeResponseFormat,
 } from "./recipe-parser";
 
@@ -178,6 +179,10 @@ describe("AI recipe import contract", () => {
     expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("advanceNotice true");
     expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("upper bound of a time range");
     expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("top-level prep and cook times");
+    expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("custom unit string");
+    expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("tiny pinch of sugar");
+    expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("quantity null, unit null");
+    expect(RECIPE_REASONING_EFFORT).toBe("low");
     expect(RECIPE_EXTRACTION_INSTRUCTIONS).toContain("Do not invent");
   });
 });

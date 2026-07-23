@@ -103,8 +103,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-sidebar-links a:hover { background: var(--surface-subtle); color: var(--ink); }
 .app-sidebar-links a.is-active { background: var(--primary-soft); color: var(--primary-hover); font-weight: 600; }
 .app-sidebar-tools { margin-top: auto; display: grid; gap: 8px; border-top: 1px solid var(--divider); padding: 16px 8px 0; }
-.app-theme-select { display: flex; min-height: 40px; align-items: center; gap: 8px; color: var(--muted); }
-.app-theme-select select { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--ink); text-transform: capitalize; }
+.small-select { position: relative; min-width: 0; }
+.small-select-trigger { display: flex; width: 100%; min-height: 40px; align-items: center; gap: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); padding: 0 8px; font-size: 0.875rem; cursor: pointer; transition: background-color 180ms ease-out; }
+.small-select-trigger:hover, .small-select-trigger[data-open] { background: var(--surface-subtle); }
+.small-select-value { min-width: 0; flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.small-select-icon { display: grid; flex: 0 0 auto; place-items: center; color: var(--muted); }
+.small-select-chevron { flex: 0 0 auto; color: var(--muted); transition: transform 180ms ease-out; }
+.small-select-trigger[data-open] .small-select-chevron { transform: rotate(180deg); }
+.small-select-listbox { position: absolute; z-index: var(--z-dropdown); right: 0; bottom: calc(100% + 4px); left: 0; display: grid; gap: 2px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); padding: 4px; box-shadow: 0 4px 8px rgb(39 35 31 / 0.12); }
+.small-select-option { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); padding: 0 10px; font-size: 0.875rem; text-align: left; cursor: pointer; }
+.small-select-option:hover, .small-select-option:focus-visible { background: var(--surface-subtle); }
+.small-select-option[aria-selected="true"] { background: var(--primary-soft); color: var(--primary-hover); font-weight: 600; }
 .app-nav-signout { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 8px 0; }
 .app-nav-signout:hover { color: var(--ink); }
 .app-content { width: 100%; margin: 0 auto; padding: 28px 28px 56px; }
