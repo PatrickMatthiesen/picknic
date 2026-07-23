@@ -59,7 +59,7 @@ PostgreSQL uses the named Docker volume `picknic-postgres`, so stopping Aspire d
 
 AI-assisted recipe parsing uses the `ai-proxy` CLIProxyAPI resource in Aspire. Picknic
 uses the provider-neutral `AI_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` settings and defaults
-to the small `gpt-5.4-mini` model.
+to `gpt-5.6-luna`.
 
 Sign in to Codex once with device authentication. Aspire does not need to be running for
 this command. The config bind mount supplies CLIProxyAPI's required configuration, while

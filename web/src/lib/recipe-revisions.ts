@@ -28,6 +28,7 @@ export type RecipeSnapshot = {
   recipeId: string;
   title: string;
   description: string | null;
+  notes: string | null;
   servings: number;
   totalTimeMinutes: number | null;
   tags: string[];
@@ -51,6 +52,7 @@ function toSnapshot(recipe: Prisma.RecipeGetPayload<{ include: typeof recipeSnap
     recipeId: recipe.id,
     title: recipe.title,
     description: recipe.description,
+    notes: recipe.notes,
     servings: recipe.servings,
     totalTimeMinutes: recipe.totalTimeMinutes,
     tags: recipe.tags,
@@ -83,7 +85,11 @@ function toSnapshot(recipe: Prisma.RecipeGetPayload<{ include: typeof recipeSnap
 }
 
 export function readRecipeSnapshot(value: Prisma.JsonValue): RecipeSnapshot {
-  return value as unknown as RecipeSnapshot;
+  const snapshot = value as unknown as RecipeSnapshot;
+  return {
+    ...snapshot,
+    notes: typeof snapshot.notes === "string" ? snapshot.notes : null,
+  };
 }
 
 export async function createRecipeRevision(client: RevisionClient, recipeId: string, publishedById: string) {

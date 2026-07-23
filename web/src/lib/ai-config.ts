@@ -7,7 +7,12 @@ type ModelCatalog = {
 type AvailabilityCache = {
   expiresAt: number;
   signature: string;
-  value: boolean;
+  value: AiRecipeImportStatus;
+};
+
+export type AiRecipeImportStatus = {
+  available: boolean;
+  model: string | null;
 };
 
 const availabilityCacheDurationMs = 30_000;
@@ -25,15 +30,23 @@ export function hasUsableAiRecipeModel(
   preferredModel: string,
   modelIds: string[],
 ): boolean {
-  return selectAvailableAiModel(preferredModel, modelIds) !== null;
+  return resolveAiRecipeImportStatus(preferredModel, modelIds).available;
 }
 
-export async function isAiRecipeImportAvailable(): Promise<boolean> {
+export function resolveAiRecipeImportStatus(
+  preferredModel: string,
+  modelIds: string[],
+): AiRecipeImportStatus {
+  const model = selectAvailableAiModel(preferredModel, modelIds);
+  return { available: model !== null, model };
+}
+
+export async function getAiRecipeImportStatus(): Promise<AiRecipeImportStatus> {
   const apiKey = process.env.AI_API_KEY?.trim();
-  if (!apiKey) return false;
+  if (!apiKey) return { available: false, model: null };
 
   const endpoint = resolveBaseUrl(process.env.AI_BASE_URL ?? "http://localhost:8317/v1");
-  const preferredModel = process.env.AI_MODEL ?? "gpt-5.4-mini";
+  const preferredModel = process.env.AI_MODEL ?? "gpt-5.6-luna";
   const signature = `${endpoint}|${preferredModel}`;
   const now = Date.now();
   if (
@@ -44,7 +57,7 @@ export async function isAiRecipeImportAvailable(): Promise<boolean> {
     return availabilityCache.value;
   }
 
-  let available = false;
+  let model: string | null = null;
   try {
     const response = await fetch(`${endpoint}/models`, {
       cache: "no-store",
@@ -56,16 +69,21 @@ export async function isAiRecipeImportAvailable(): Promise<boolean> {
       const modelIds = (catalog.data ?? [])
         .map((model) => model.id)
         .filter((id): id is string => typeof id === "string");
-      available = hasUsableAiRecipeModel(preferredModel, modelIds);
+      model = resolveAiRecipeImportStatus(preferredModel, modelIds).model;
     }
   } catch {
-    available = false;
+    model = null;
   }
 
+  const value = { available: model !== null, model };
   availabilityCache = {
     expiresAt: now + availabilityCacheDurationMs,
     signature,
-    value: available,
+    value,
   };
-  return available;
+  return value;
+}
+
+export async function isAiRecipeImportAvailable(): Promise<boolean> {
+  return (await getAiRecipeImportStatus()).available;
 }

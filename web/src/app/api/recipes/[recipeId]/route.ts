@@ -11,6 +11,7 @@ type RouteContext = { params: Promise<{ recipeId: string }> };
 type RecipeUpdatePayload = {
   title?: unknown;
   description?: unknown;
+  notes?: unknown;
   servings?: unknown;
   totalTimeMinutes?: unknown;
   tags?: unknown;
@@ -120,6 +121,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       data: {
         title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : undefined,
         description: typeof payload.description === "string" ? payload.description.trim() : undefined,
+        notes: typeof payload.notes === "string" ? payload.notes.trim() || null : undefined,
         servings: typeof payload.servings === "number" && payload.servings > 0 ? Math.floor(payload.servings) : undefined,
         totalTimeMinutes,
         tags: Array.isArray(payload.tags) ? normalizeTags(payload.tags) : undefined,

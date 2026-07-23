@@ -11,7 +11,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 var compose = builder.AddDockerComposeEnvironment("picknic")
     .WithDashboard(enabled: false);
 
-var aiModel = builder.AddParameter("ai-model", "gpt-5.4-mini", publishValueAsDefault: true);
+var aiModel = builder.AddParameter("ai-model", "gpt-5.6-luna", publishValueAsDefault: true);
 var aiApiKey = builder.AddParameter("ai-api-key", "picknic-local-ai", publishValueAsDefault: true);
 
 var aiProxy = builder.AddDockerfile("ai-proxy", "cliproxyapi")
