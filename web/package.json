@@ -46,7 +46,7 @@
     "eslint-config-next": "16.2.11",
     "prisma": "7.9.0",
     "tailwindcss": "4.3.3",
-    "typescript": "6.0.2",
+    "typescript": "6.0.3",
     "workos": "0.18.0"
   },
   "ignoreScripts": [
