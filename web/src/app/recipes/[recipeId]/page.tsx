@@ -223,6 +223,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
         createdById: context.userId,
         title: snapshot.title,
         description: snapshot.description,
+        notes: snapshot.notes ?? null,
         servings: snapshot.servings,
         totalTimeMinutes: snapshot.totalTimeMinutes,
         tags: snapshot.tags,
@@ -309,6 +310,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
           </section>)}
         </section>
       </div>
+      {recipe.notes ? <section className="recipe-detail-notes"><h2>Notes</h2><p>{recipe.notes}</p></section> : null}
     </AppPageShell>
   );
 }

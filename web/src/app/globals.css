@@ -103,8 +103,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-sidebar-links a:hover { background: var(--surface-subtle); color: var(--ink); }
 .app-sidebar-links a.is-active { background: var(--primary-soft); color: var(--primary-hover); font-weight: 600; }
 .app-sidebar-tools { margin-top: auto; display: grid; gap: 8px; border-top: 1px solid var(--divider); padding: 16px 8px 0; }
-.app-theme-select { display: flex; min-height: 40px; align-items: center; gap: 8px; color: var(--muted); }
-.app-theme-select select { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--ink); text-transform: capitalize; }
+.small-select { position: relative; min-width: 0; }
+.small-select-trigger { display: flex; width: 100%; min-height: 40px; align-items: center; gap: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); padding: 0 8px; font-size: 0.875rem; cursor: pointer; transition: background-color 180ms ease-out; }
+.small-select-trigger:hover, .small-select-trigger[data-open] { background: var(--surface-subtle); }
+.small-select-value { min-width: 0; flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.small-select-icon { display: grid; flex: 0 0 auto; place-items: center; color: var(--muted); }
+.small-select-chevron { flex: 0 0 auto; color: var(--muted); transition: transform 180ms ease-out; }
+.small-select-trigger[data-open] .small-select-chevron { transform: rotate(180deg); }
+.small-select-listbox { position: absolute; z-index: var(--z-dropdown); right: 0; bottom: calc(100% + 4px); left: 0; display: grid; gap: 2px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); padding: 4px; box-shadow: 0 4px 8px rgb(39 35 31 / 0.12); }
+.small-select-option { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); padding: 0 10px; font-size: 0.875rem; text-align: left; cursor: pointer; }
+.small-select-option:hover, .small-select-option:focus-visible { background: var(--surface-subtle); }
+.small-select-option[aria-selected="true"] { background: var(--primary-soft); color: var(--primary-hover); font-weight: 600; }
 .app-nav-signout { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 8px 0; }
 .app-nav-signout:hover { color: var(--ink); }
 .app-content { width: 100%; margin: 0 auto; padding: 28px 28px 56px; }
@@ -226,10 +235,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .recipe-draft-recovery > div:last-child { display: flex; flex: 0 0 auto; gap: var(--space-2); }
 .recipe-draft-recovery button { min-height: 44px; padding-inline: var(--space-3); cursor: pointer; }
 .recipe-import-panel { display: grid; gap: var(--space-3); margin-top: var(--space-6); border: 1px solid var(--divider); border-radius: 8px; background: var(--primary-soft); padding: var(--space-4); }
-.recipe-import-panel > div { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.recipe-import-heading { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .recipe-import-panel label { font-size: 0.875rem; font-weight: 650; }
-.recipe-import-panel > div button { display: grid; width: 44px; height: 44px; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
-.recipe-import-panel textarea { min-width: 0; border: 1px solid var(--divider); border-radius: 6px; background: var(--surface); color: var(--ink); padding: var(--space-3); resize: vertical; }
+.recipe-import-heading button { display: grid; width: 44px; height: 44px; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.recipe-import-source { position: relative; display: grid; }
+.recipe-import-panel textarea { width: 100%; min-width: 0; border: 1px solid var(--divider); border-radius: 6px; background: var(--surface); color: var(--ink); padding: var(--space-3); padding-bottom: 2rem; resize: vertical; }
+.recipe-import-source > span { position: absolute; right: var(--space-3); bottom: var(--space-2); max-width: calc(100% - 1.5rem); overflow: hidden; color: var(--text-secondary); font-size: 0.68rem; line-height: 1; opacity: 0.48; pointer-events: none; text-overflow: ellipsis; white-space: nowrap; }
 .recipe-import-panel > button { display: inline-flex; width: fit-content; min-height: 44px; align-items: center; padding-inline: var(--space-4); cursor: pointer; }
 .recipe-writing-section { margin-top: var(--space-8); border-top: 1px solid var(--divider); padding-top: var(--space-4); }
 .recipe-writing-heading { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: var(--space-4); }
@@ -305,7 +316,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .recipe-setting-fields { display: grid; gap: var(--space-6); margin-top: var(--space-6); }
 .recipe-setting-fields > label { display: grid; gap: var(--space-2); color: var(--ink); }
 .recipe-setting-fields > label > span, .servings-setting legend { font-size: 0.875rem; font-weight: 600; }
-.recipe-setting-fields input, .setting-select { width: 100%; min-width: 0; min-height: 44px; border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--divider)); border-radius: 6px; background: var(--surface); color: var(--ink); padding: 0 var(--space-3); }
+.recipe-setting-fields input, .recipe-setting-fields textarea, .setting-select { width: 100%; min-width: 0; min-height: 44px; border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--divider)); border-radius: 6px; background: var(--surface); color: var(--ink); padding: 0 var(--space-3); }
+.recipe-setting-fields textarea { resize: vertical; padding-block: var(--space-3); line-height: 1.5; }
 .recipe-setting-fields small { color: var(--text-secondary); font-size: 0.75rem; line-height: 1.4; }
 .setting-icon-input { display: flex; min-height: 44px; align-items: center; border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--divider)); border-radius: 6px; background: var(--surface); color: var(--muted); padding-left: var(--space-3); }
 .setting-icon-input input { flex: 1; border: 0; padding-inline: var(--space-2); }
@@ -390,6 +402,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .recipe-instructions li > div, .cook-steps li > div { min-width: 0; }
 .recipe-instructions li small, .cook-steps li small { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); color: var(--muted); font-size: 0.75rem; }
 .recipe-instructions li small span, .cook-steps li small span { display: inline-flex; align-items: center; gap: var(--space-1); }
+.recipe-detail-notes { margin-top: var(--space-5); border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); padding: 22px 24px; }
+.recipe-detail-notes h2 { margin-bottom: var(--space-2); font-size: 1rem; }
+.recipe-detail-notes p { max-width: 75ch; white-space: pre-wrap; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; }
 .advance-notice { color: #8a6700; }
 .cook-empty { display: flex; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--canvas); color: var(--muted); padding: 24px; text-align: center; }
 .cook-empty h1 { color: var(--ink); font-family: var(--font-recipe-serif), Georgia, serif; font-size: 2rem; }
@@ -504,7 +519,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .recipe-authoring-header { align-items: flex-start; }
   .recipe-identity { margin-top: var(--space-3); }
   .recipe-identity #recipe-title { font-size: 1.75rem; }
-  .recipe-identity textarea, .ingredient-editor-row input, .step-editor-row > textarea, .recipe-setting-fields input, .setting-select select { font-size: 1rem; }
+  .recipe-identity textarea, .ingredient-editor-row input, .step-editor-row > textarea, .recipe-setting-fields input, .recipe-setting-fields textarea, .setting-select select { font-size: 1rem; }
   .recipe-draft-recovery { align-items: stretch; flex-direction: column; }
   .recipe-draft-recovery > div:last-child { flex-wrap: wrap; }
   .recipe-writing-section { margin-top: var(--space-6); }

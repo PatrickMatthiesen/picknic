@@ -38,6 +38,8 @@ const UNIT_CATALOG = [
   { id: "count-bunch", dimension: "count", system: "neutral", symbol: "bunch", name: "bunch", aliases: ["bunch", "bunches"], factorToBase: null },
   { id: "count-pinch", dimension: "count", system: "neutral", symbol: "pinch", name: "pinch", aliases: ["pinch", "pinches"], factorToBase: null },
   { id: "count-handful", dimension: "count", system: "neutral", symbol: "handful", name: "handful", aliases: ["handful", "handfuls"], factorToBase: null },
+  { id: "count-loaf", dimension: "count", system: "neutral", symbol: "loaf", name: "loaf", aliases: ["loaf", "loaves"], factorToBase: null },
+  { id: "count-head", dimension: "count", system: "neutral", symbol: "head", name: "head", aliases: ["head", "heads"], factorToBase: null },
 ] as const satisfies readonly UnitDefinition[];
 
 const unitById = new Map<string, UnitDefinition>(UNIT_CATALOG.map((unit) => [unit.id, unit]));
@@ -75,6 +77,24 @@ export function resolveUnambiguousUnit(value: string | null | undefined): UnitDe
 
 export function getUnitStorageKey(unit: string, unitId: string | null | undefined): string {
   return unitId ?? `unit:${normalizeAlias(unit)}`;
+}
+
+export function getRecipeUnitVocabulary(): string {
+  const aliasesBySymbol = new Map<string, Set<string>>();
+
+  for (const unit of UNIT_CATALOG) {
+    const aliases = aliasesBySymbol.get(unit.symbol) ?? new Set<string>();
+    for (const alias of [unit.name, ...unit.aliases]) {
+      if (normalizeAlias(alias) !== normalizeAlias(unit.symbol)) {
+        aliases.add(alias);
+      }
+    }
+    aliasesBySymbol.set(unit.symbol, aliases);
+  }
+
+  return Array.from(aliasesBySymbol, ([symbol, aliases]) =>
+    aliases.size > 0 ? `${symbol} (${Array.from(aliases).join(", ")})` : symbol
+  ).join("; ");
 }
 
 function unitMatchesInput(unit: UnitDefinition, value: string): boolean {

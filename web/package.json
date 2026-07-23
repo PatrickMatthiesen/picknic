@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "bun test",
+    "test:ai": "bun run evals/recipe-parser.live.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check": "bun run prisma:generate && bun run typecheck && bun run test && bun run lint && bun run build",
@@ -45,7 +46,7 @@
     "eslint-config-next": "16.2.11",
     "prisma": "7.9.0",
     "tailwindcss": "4.3.3",
-    "typescript": "6.0.2",
+    "typescript": "6.0.3",
     "workos": "0.18.0"
   },
   "ignoreScripts": [
@@ -60,10 +61,12 @@
     "@hono/node-server": "1.19.11",
     "brace-expansion": "1.1.16",
     "fast-uri": "3.1.4",
+    "find-my-way": "9.7.0",
     "flatted": "3.4.2",
     "hono": "4.12.30",
     "minimatch": "3.1.5",
     "picomatch": "2.3.2",
+    "postcss": "8.5.22",
     "sharp": "0.35.3"
   }
 }

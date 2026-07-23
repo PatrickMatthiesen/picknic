@@ -97,6 +97,7 @@ model Recipe {
   createdById      String
   title            String
   description      String?
+  notes            String?
   servings         Int                    @default(1)
   totalTimeMinutes Int?
   tags             String[]               @default([])

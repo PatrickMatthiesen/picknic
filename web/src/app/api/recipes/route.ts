@@ -9,6 +9,7 @@ import { createRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions
 type RecipePayload = {
   title?: unknown;
   description?: unknown;
+  notes?: unknown;
   servings?: unknown;
   totalTimeMinutes?: unknown;
   tags?: unknown;
@@ -105,6 +106,7 @@ export async function POST(request: Request) {
         createdById: userId,
         title,
         description: typeof payload.description === "string" ? payload.description.trim() : null,
+        notes: typeof payload.notes === "string" ? payload.notes.trim() || null : null,
         servings: typeof payload.servings === "number" && payload.servings > 0 ? Math.floor(payload.servings) : 1,
         totalTimeMinutes,
         tags: normalizeTags(payload.tags),
