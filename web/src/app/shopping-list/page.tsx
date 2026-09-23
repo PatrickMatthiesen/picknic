@@ -1,14 +1,18 @@
 import { ShoppingItemSource, ShoppingItemStatus } from "@prisma/client";
 import Link from "next/link";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-context";
-import { getWeekStartUtc } from "@/lib/meal-plan";
+import { addUtcDays, getDateKey, getWeekStartUtc, parseDateKey } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { generateShoppingListForWeek, getShoppingListForWeek } from "@/lib/shopping-list-service";
 import { normalizeUnitInput } from "@/lib/units";
 import { AppPageShell } from "@/app/_components/page-shell";
 
-export default async function ShoppingListPage() {
+type PageProps = { searchParams: Promise<{ week?: string }> };
+
+export default async function ShoppingListPage({ searchParams }: PageProps) {
+  const search = await searchParams;
   const { userId, organizationId } = await requireAppAuthContext();
   const householdId = await resolveActiveHouseholdId(userId, organizationId);
 
@@ -29,7 +33,8 @@ export default async function ShoppingListPage() {
     );
   }
 
-  const weekStart = getWeekStartUtc(new Date());
+  const weekStart = getWeekStartUtc(parseDateKey(search.week) ?? new Date());
+  const weekKey = getDateKey(weekStart);
 
   async function regenerateShoppingList() {
     "use server";
@@ -43,7 +48,7 @@ export default async function ShoppingListPage() {
     await generateShoppingListForWeek({
       householdId: activeHouseholdId,
       userId: context.userId,
-      weekStart: getWeekStartUtc(new Date()),
+      weekStart: new Date(`${weekKey}T00:00:00.000Z`),
     });
 
     revalidatePath("/shopping-list");
@@ -101,19 +106,19 @@ export default async function ShoppingListPage() {
       throw new Error("No household found for this user.");
     }
 
-    const currentWeekStart = getWeekStartUtc(new Date());
+    const selectedWeekStart = new Date(`${weekKey}T00:00:00.000Z`);
     const mealPlan = await prisma.mealPlan.findUnique({
       where: {
         householdId_weekStart: {
           householdId: activeHouseholdId,
-          weekStart: currentWeekStart,
+          weekStart: selectedWeekStart,
         },
       },
       select: { id: true },
     });
 
     if (!mealPlan) {
-      throw new Error("Create a meal plan for this week before adding manual shopping items.");
+      throw new Error("Create a meal plan for the selected week before adding manual shopping items.");
     }
 
     const shoppingList = await prisma.shoppingList.upsert({
@@ -122,7 +127,7 @@ export default async function ShoppingListPage() {
         householdId: activeHouseholdId,
         mealPlanId: mealPlan.id,
         createdById: context.userId,
-        name: `Week of ${currentWeekStart.toISOString().slice(0, 10)}`,
+        name: `Week of ${selectedWeekStart.toISOString().slice(0, 10)}`,
       },
       update: {},
       select: { id: true },
@@ -154,12 +159,20 @@ export default async function ShoppingListPage() {
     <AppPageShell
       currentPath="/shopping-list"
       title="Shopping list"
-      subtitle={`Week of ${weekStart.toISOString().slice(0, 10)} to ${weekEnd.toISOString().slice(0, 10)}.`}
+      subtitle={`Week of ${weekKey} to ${getDateKey(weekEnd)}.`}
+      headerChildren={
+        <div className="week-controls">
+          <Link aria-label="Previous week" href={`/shopping-list?week=${getDateKey(addUtcDays(weekStart, -7))}`}><ChevronLeft size={18} /></Link>
+          <Link className="today-link" href="/shopping-list"><CalendarDays size={17} /> Today</Link>
+          <Link aria-label="Next week" href={`/shopping-list?week=${getDateKey(addUtcDays(weekStart, 7))}`}><ChevronRight size={18} /></Link>
+          <Link className="today-link" href={`/planner?week=${weekKey}`}>View meal plan</Link>
+        </div>
+      }
     >
       <section className="app-theme-card rounded-3xl p-5">
           <h2 className="text-lg font-semibold">Generate list from meal plan</h2>
           <p className="app-theme-muted mt-2 text-sm">
-            Regenerate to refresh auto items from planned meals; manual items are preserved.
+            Refresh quantities from planned meals. Existing items keep their checked status, and manual items are preserved.
           </p>
           <form action={regenerateShoppingList} className="mt-4">
             <button className="app-theme-primary-button rounded-2xl px-5 py-2 text-sm font-medium" type="submit">
@@ -184,7 +197,7 @@ export default async function ShoppingListPage() {
           <h2 className="text-lg font-semibold">Items</h2>
           {!shoppingList || shoppingList.items.length === 0 ? (
             <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">
-              No shopping items yet. Generate from your current week meal plan.
+              No shopping items yet. Generate from the selected week’s meal plan.
             </p>
           ) : (
             shoppingList.items.map((item) => {

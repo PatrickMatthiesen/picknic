@@ -1,5 +1,5 @@
 import { MealType, Prisma, RecipeVisibility } from "@prisma/client";
-import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from "lucide-react";
+import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Plus, Search, ShoppingBasket, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -9,7 +9,7 @@ import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-conte
 import { addUtcDays, getDateKey, getWeekStartUtc, parseDateKey, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { formatMealType } from "@/lib/recipe-display";
-import { ensureRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
+import { ensureRecipeRevision, getPlanningRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
 const OPTIONAL_MEAL_TYPES = [MealType.BREAKFAST, MealType.BRUNCH, MealType.LUNCH, MealType.SNACK, MealType.OTHER];
 const RECIPE_VIEWS = ["all", "saved", "collections", "discover"] as const;
@@ -92,6 +92,9 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     });
     if (!recipe) throw new Error("This recipe is not available to your household.");
 
+    const revision = await getPlanningRevision(prisma, recipe, activeMembership.householdId);
+    if (!revision) throw new Error("This shared recipe has no available published revision.");
+
     const activeWeekStart = getWeekStartUtc(date);
     const plan = await prisma.mealPlan.upsert({
       where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart: activeWeekStart } },
@@ -99,11 +102,6 @@ export default async function PlannerPage({ searchParams }: PageProps) {
       create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart: activeWeekStart },
       select: { id: true },
     });
-    const revision = recipe.householdId !== activeMembership.householdId
-      && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt)
-      && recipe.latestRevisionId
-      ? await prisma.recipeRevision.findUniqueOrThrow({ where: { id: recipe.latestRevisionId } })
-      : await ensureRecipeRevision(prisma, recipe.id, recipe.createdById);
     await prisma.mealPlanEntry.upsert({
       where: { mealPlanId_date_mealType: { mealPlanId: plan.id, date: toUtcDate(date), mealType } },
       update: { recipeId, recipeRevisionId: revision.id },
@@ -204,6 +202,7 @@ export default async function PlannerPage({ searchParams }: PageProps) {
           <Link aria-label="Previous week" href={`/planner?week=${previousWeek}`}><ChevronLeft size={18} /></Link>
           <Link className="today-link" href="/planner"><CalendarDays size={17} /> Today</Link>
           <Link aria-label="Next week" href={`/planner?week=${nextWeek}`}><ChevronRight size={18} /></Link>
+          <Link className="today-link" href={`/shopping-list?week=${weekKey}`}><ShoppingBasket size={17} /> Shop this week</Link>
         </div>
       }
     >

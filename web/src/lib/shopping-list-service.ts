@@ -1,7 +1,7 @@
 import { ShoppingItemSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { readRecipeSnapshot } from "@/lib/recipe-revisions";
-import { buildAutoShoppingItems, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
+import { buildAutoShoppingItems, shoppingItemKey, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
 
 export async function getShoppingListForWeek(householdId: string, weekStart: Date) {
   const mealPlan = await prisma.mealPlan.findUnique({
@@ -87,47 +87,61 @@ export async function generateShoppingListForWeek({
     }),
   };
   const autoItems = subtractPantryFromShoppingItems(buildAutoShoppingItems(pinnedMealPlan), pantryItems);
-  const shoppingList = await prisma.shoppingList.upsert({
-    where: { mealPlanId: mealPlan.id },
-    create: {
-      householdId,
-      mealPlanId: mealPlan.id,
-      createdById: userId,
-      name: `Week of ${weekStart.toISOString().slice(0, 10)}`,
-    },
-    update: {
-      name: `Week of ${weekStart.toISOString().slice(0, 10)}`,
-    },
-    select: { id: true },
-  });
+  return prisma.$transaction(async (tx) => {
+    // Upserting the parent inside the transaction also serializes refreshes for
+    // this list, so concurrent requests cannot create duplicate generated items.
+    const shoppingList = await tx.shoppingList.upsert({
+      where: { mealPlanId: mealPlan.id },
+      create: {
+        householdId,
+        mealPlanId: mealPlan.id,
+        createdById: userId,
+        name: `Week of ${weekStart.toISOString().slice(0, 10)}`,
+      },
+      update: { name: `Week of ${weekStart.toISOString().slice(0, 10)}` },
+      select: { id: true },
+    });
+    const existingItems = await tx.shoppingListItem.findMany({
+      where: { shoppingListId: shoppingList.id, source: ShoppingItemSource.AUTO },
+    });
+    const existingByKey = new Map(existingItems.map((item) => [shoppingItemKey(item), item]));
+    const retainedIds: string[] = [];
 
-  await prisma.$transaction(async (tx) => {
+    for (const item of autoItems) {
+      const existing = existingByKey.get(shoppingItemKey(item));
+      if (existing) {
+        retainedIds.push(existing.id);
+        // Do not write status: keep checked/skipped state, including status
+        // changes made by another household member while the list refreshes.
+        await tx.shoppingListItem.update({
+          where: { id: existing.id },
+          data: {
+            ingredientName: item.ingredientName,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitId: item.unitId,
+          },
+        });
+      } else {
+        const created = await tx.shoppingListItem.create({
+          data: { shoppingListId: shoppingList.id, ...item },
+          select: { id: true },
+        });
+        retainedIds.push(created.id);
+      }
+    }
+
     await tx.shoppingListItem.deleteMany({
       where: {
         shoppingListId: shoppingList.id,
         source: ShoppingItemSource.AUTO,
+        id: { notIn: retainedIds },
       },
     });
 
-    if (autoItems.length > 0) {
-      await tx.shoppingListItem.createMany({
-        data: autoItems.map((item) => ({
-          shoppingListId: shoppingList.id,
-          ingredientName: item.ingredientName,
-          quantity: item.quantity,
-          unit: item.unit,
-          unitId: item.unitId,
-          source: item.source,
-          status: item.status,
-        })),
-      });
-    }
-  });
-
-  return prisma.shoppingList.findUnique({
-    where: { id: shoppingList.id },
-    include: {
-      items: { orderBy: [{ status: "asc" }, { ingredientName: "asc" }] },
-    },
+    return tx.shoppingList.findUnique({
+      where: { id: shoppingList.id },
+      include: { items: { orderBy: [{ status: "asc" }, { ingredientName: "asc" }] } },
+    });
   });
 }

@@ -123,7 +123,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-page-body { display: grid; gap: 24px; }
 .app-mobile-nav { display: none; }
 
-.week-controls { display: flex; align-items: center; gap: 4px; }
+.week-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .week-controls a { display: inline-flex; min-height: 40px; min-width: 40px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--ink); text-decoration: none; }
 .week-controls .today-link { padding: 0 12px; }
 .week-table { display: grid; grid-template-columns: repeat(7, minmax(124px, 1fr)); overflow: visible; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); }
