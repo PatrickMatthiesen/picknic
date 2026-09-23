@@ -123,3 +123,21 @@ export async function ensureRecipeRevision(client: RevisionClient, recipeId: str
   }
   return createRecipeRevision(client, recipeId, publishedById);
 }
+
+// Access must be checked by the caller. Foreign recipes must never be snapshotted
+// from live data: an author may have made private edits since the last publication.
+export async function getPlanningRevision(
+  client: RevisionClient,
+  recipe: { id: string; householdId: string; createdById: string; latestRevisionId: string | null },
+  householdId: string,
+) {
+  if (recipe.householdId === householdId) {
+    return ensureRecipeRevision(client, recipe.id, recipe.createdById);
+  }
+  if (!recipe.latestRevisionId) return null;
+
+  const revision = await client.recipeRevision.findFirst({
+    where: { id: recipe.latestRevisionId, recipeId: recipe.id },
+  });
+  return revision && readRecipeSnapshot(revision.snapshot).visibility === "PUBLIC" ? revision : null;
+}

@@ -1,12 +1,14 @@
-import { MembershipRole } from "@prisma/client";
+import { MembershipRole, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
+import { getUnitStorageKey, normalizeUnitInput } from "@/lib/units";
 
 type RouteContext = { params: Promise<{ pantryItemId: string }> };
 type PantryUpdatePayload = {
   quantity?: unknown;
   unit?: unknown;
+  unitId?: unknown;
   expiresAt?: unknown;
 };
 
@@ -22,7 +24,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const existing = await prisma.pantryItem.findFirst({
     where: { id: pantryItemId, householdId: membership.householdId },
-    select: { id: true },
+    select: { id: true, unitId: true },
   });
   if (!existing) {
     return NextResponse.json({ error: "Pantry item not found." }, { status: 404 });
@@ -31,20 +33,37 @@ export async function PATCH(request: Request, context: RouteContext) {
   const quantity =
     typeof payload.quantity === "number" || typeof payload.quantity === "string" ? Number(payload.quantity) : undefined;
   const unit = typeof payload.unit === "string" ? payload.unit.trim() : undefined;
+  if (payload.unit !== undefined && !unit) {
+    return NextResponse.json({ error: "unit must be a non-empty string." }, { status: 400 });
+  }
+  const normalizedUnit = unit
+    ? normalizeUnitInput(unit, "metric", typeof payload.unitId === "string" ? payload.unitId : existing.unitId)
+    : undefined;
   const expiresAt =
     typeof payload.expiresAt === "string" && payload.expiresAt.trim().length > 0 ? new Date(payload.expiresAt) : undefined;
 
-  const updated = await prisma.pantryItem.update({
-    where: { id: pantryItemId },
-    data: {
-      quantity: quantity !== undefined && Number.isFinite(quantity) && quantity > 0 ? quantity : undefined,
-      unit: unit && unit.length > 0 ? unit : undefined,
-      expiresAt: expiresAt && !Number.isNaN(expiresAt.valueOf()) ? expiresAt : payload.expiresAt === null ? null : undefined,
-      userId,
-    },
-  });
+  try {
+    const updated = await prisma.pantryItem.update({
+      where: { id: pantryItemId },
+      data: {
+        quantity: quantity !== undefined && Number.isFinite(quantity) && quantity > 0 ? quantity : undefined,
+        ...(normalizedUnit && normalizedUnit.unit ? {
+          unit: normalizedUnit.unit,
+          unitId: normalizedUnit.unitId,
+          unitKey: getUnitStorageKey(normalizedUnit.unit, normalizedUnit.unitId),
+        } : {}),
+        expiresAt: expiresAt && !Number.isNaN(expiresAt.valueOf()) ? expiresAt : payload.expiresAt === null ? null : undefined,
+        userId,
+      },
+    });
 
-  return NextResponse.json({ data: updated });
+    return NextResponse.json({ data: updated });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ error: "A pantry item with this ingredient and unit already exists." }, { status: 409 });
+    }
+    throw error;
+  }
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {

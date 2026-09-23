@@ -40,6 +40,11 @@ function roundToTwo(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+export function shoppingItemKey(item: { ingredientName: string; unit: string | null; unitId?: string | null }): string {
+  const definition = getUnitById(item.unitId) ?? resolveUnambiguousUnit(item.unit);
+  return `${item.ingredientName.trim().toLowerCase()}::${definition?.id ?? item.unit?.trim().toLowerCase() ?? ""}`;
+}
+
 export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggregate[] {
   const aggregated = new Map<string, ShoppingAggregate>();
 
@@ -55,7 +60,7 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
 
       const definition = getUnitById(ingredient.unitId) ?? resolveUnambiguousUnit(ingredient.unit);
       const unit = definition?.symbol ?? ingredient.unit?.trim() ?? null;
-      const key = `${ingredientName.toLowerCase()}::${definition?.id ?? unit?.toLowerCase() ?? ""}`;
+      const key = shoppingItemKey({ ingredientName, unit, unitId: definition?.id });
       const numericQuantity =
         ingredient.quantity !== null && ingredient.quantity !== undefined ? Number(ingredient.quantity) : null;
       const scaledQuantity =

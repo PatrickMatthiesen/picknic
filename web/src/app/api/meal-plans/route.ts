@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { getWeekStartUtc, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
-import { ensureRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
+import { getPlanningRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
 type MealPlanEntryPayload = {
   date?: unknown;
@@ -129,14 +129,13 @@ export async function POST(request: Request) {
   const recipes = await prisma.recipe.findMany({
     where: {
       id: { in: recipeIds },
-      deletedAt: null,
       OR: [
-        { householdId: membership.householdId },
-        { visibility: RecipeVisibility.PUBLIC },
-        { saves: { some: { userId } } },
+        { householdId: membership.householdId, deletedAt: null },
+        { visibility: RecipeVisibility.PUBLIC, deletedAt: null },
+        { saves: { some: { userId } }, latestRevisionId: { not: null } },
       ],
     },
-    select: { id: true, createdById: true },
+    select: { id: true, householdId: true, createdById: true, latestRevisionId: true },
   });
   const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
 
@@ -146,7 +145,10 @@ export async function POST(request: Request) {
 
   const revisions = new Map<string, string>();
   for (const recipe of recipes) {
-    const revision = await ensureRecipeRevision(prisma, recipe.id, recipe.createdById);
+    const revision = await getPlanningRevision(prisma, recipe, membership.householdId);
+    if (!revision) {
+      return NextResponse.json({ error: "A shared recipe has no available published revision." }, { status: 400 });
+    }
     revisions.set(recipe.id, revision.id);
   }
 
