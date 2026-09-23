@@ -92,13 +92,14 @@ jobs:
 
       - name: Audit dependencies
         working-directory: web
-        run: bun audit --audit-level=high
+        run: bun run audit
 
       - name: Diagnose WorkOS integration
         working-directory: web
         run: bun run workos doctor --install-dir . --skip-ai --skip-api --json
 
       - name: Install Aspire CLI
+        id: aspire-cli
         run: |
           curl -sSL https://aspire.dev/install.sh | bash -s -- --quality "dev"
           echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
@@ -107,6 +108,7 @@ jobs:
         run: aspire doctor --non-interactive
 
       - name: Start Aspire
+        id: aspire-start
         run: aspire start --apphost apphost/apphost.cs --isolated --non-interactive
 
       - name: Wait for Aspire database
@@ -135,9 +137,9 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$web_url/api/recipes")" = "401"
 
       - name: Show Aspire logs on failure
-        if: failure()
+        if: failure() && steps.aspire-cli.outcome == 'success' && steps.aspire-start.outcome != 'skipped'
         run: aspire logs --tail 200 --apphost apphost/apphost.cs --non-interactive
 
       - name: Stop Aspire
-        if: always()
+        if: always() && steps.aspire-cli.outcome == 'success' && steps.aspire-start.outcome != 'skipped'
         run: aspire stop --apphost apphost/apphost.cs --non-interactive

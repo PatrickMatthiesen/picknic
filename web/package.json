@@ -11,11 +11,12 @@
     "test:ai": "bun run evals/recipe-parser.live.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check": "bun run prisma:generate && bun run typecheck && bun run test && bun run lint && bun run build",
+    "check": "bun run prisma:generate && bun run typecheck && bun run test && bun run lint && bun run build && bun run audit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "audit": "bun audit --audit-level=high"
   },
   "dependencies": {
     "@dnd-kit/react": "0.5.0",
@@ -30,7 +31,7 @@
     "@workos-inc/authkit-nextjs": "4.2.0",
     "@workos-inc/node": "10.8.0",
     "lucide-react": "1.25.0",
-    "next": "16.2.11",
+    "next": "16.3.3",
     "openai": "6.48.0",
     "pg": "8.22.0",
     "react": "19.2.8",
@@ -43,7 +44,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.3.3",
     "prisma": "7.9.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
@@ -59,14 +60,20 @@
   ],
   "overrides": {
     "@hono/node-server": "1.19.11",
-    "brace-expansion": "1.1.16",
-    "fast-uri": "3.1.4",
+    "brace-expansion": "1.1.18",
+    "browserslist": "4.28.7",
+    "deepmerge-ts": "8.0.2",
+    "fast-uri": "3.1.6",
     "find-my-way": "9.7.0",
     "flatted": "3.4.2",
     "hono": "4.12.30",
+    "ip-address": "10.3.1",
+    "js-yaml": "4.3.2",
     "minimatch": "3.1.5",
+    "mysql2": "3.22.0",
+    "nanoid": "3.3.18",
     "picomatch": "2.3.2",
     "postcss": "8.5.22",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4"
   }
 }
