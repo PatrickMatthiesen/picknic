@@ -250,6 +250,7 @@ model ShoppingList {
   mealPlanId  String?            @unique
   createdById String
   name        String
+  planFingerprint String?
   household   Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
   mealPlan    MealPlan?          @relation(fields: [mealPlanId], references: [id], onDelete: SetNull)
   createdBy   User               @relation(fields: [createdById], references: [id], onDelete: Restrict)

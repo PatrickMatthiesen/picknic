@@ -59,5 +59,5 @@ export default async function EditRecipePage({ params }: PageProps) {
     instructionComponents: instructionComponents.length ? instructionComponents : [{ id: "instruction-component-initial", name: "", steps: [] }],
   };
   const aiRecipeImport = await getAiRecipeImportStatus();
-  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={aiRecipeImport.available} aiRecipeImportModel={aiRecipeImport.model} initialDraft={draft} recipeId={recipeId} /></main>;
+  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={aiRecipeImport.available} aiRecipeImportModel={aiRecipeImport.model} aiRecipeImportModels={aiRecipeImport.models} initialDraft={draft} recipeId={recipeId} /></main>;
 }

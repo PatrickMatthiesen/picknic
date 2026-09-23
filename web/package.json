@@ -16,7 +16,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "audit": "bun audit --audit-level=high"
+    "audit": "bun audit --audit-level=high",
+    "test:integration": "bun test ./tests/meal-planning.database.ts"
   },
   "dependencies": {
     "@dnd-kit/react": "0.5.0",

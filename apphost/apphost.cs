@@ -12,6 +12,7 @@ var compose = builder.AddDockerComposeEnvironment("picknic")
     .WithDashboard(enabled: false);
 
 var aiModel = builder.AddParameter("ai-model", "gpt-5.6-luna", publishValueAsDefault: true);
+var aiAllowedModels = builder.AddParameter("ai-allowed-models", "gpt-5.6-luna", publishValueAsDefault: true);
 var aiApiKey = builder.AddParameter("ai-api-key", "picknic-local-ai", publishValueAsDefault: true);
 
 var aiProxy = builder.AddDockerfile("ai-proxy", "cliproxyapi")
@@ -62,6 +63,7 @@ var web = builder.AddNextJsApp("web", "../web")
     .WithEnvironment("AI_BASE_URL", aiBaseUrl)
     .WithEnvironment("AI_API_KEY", aiApiKey)
     .WithEnvironment("AI_MODEL", aiModel)
+    .WithEnvironment("AI_ALLOWED_MODELS", aiAllowedModels)
     .WithEnvironment("WORKOS_CLIENT_ID", workosClientId)
     .WithEnvironment("WORKOS_API_KEY", workosApiKey)
     .WithEnvironment("WORKOS_COOKIE_PASSWORD", workosCookiePassword)

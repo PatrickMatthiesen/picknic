@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { Prisma } from "@prisma/client";
 import { isValidElement, type ReactNode } from "react";
 
@@ -8,7 +8,7 @@ const prisma = {
   recipe: { findMany: mock(), findUniqueOrThrow: mock() },
   recipeRevision: { findFirst: mock(), findUnique: mock(), create: mock() },
   mealPlan: { findUnique: mock(), upsert: mock() },
-  mealPlanEntry: { upsert: mock() },
+  mealPlanEntry: { upsert: mock(), updateMany: mock() },
   pantryItem: { findFirst: mock(), findMany: mock(), update: mock() },
   shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock() },
   shoppingListItem: { findMany: mock(), create: mock(), update: mock(), updateMany: mock(), deleteMany: mock() },
@@ -31,7 +31,7 @@ mock.module("@/app/_components/page-shell", () => ({ AppPageShell: () => null })
 
 const { POST: planMeals } = await import("../src/app/api/meal-plans/route");
 const { PATCH: updatePantry } = await import("../src/app/api/pantry/[pantryItemId]/route");
-const { generateShoppingListForWeek } = await import("../src/lib/shopping-list-service");
+const { generateShoppingListForWeek, getShoppingListForWeek } = await import("../src/lib/shopping-list-service");
 const { default: ShoppingListPage } = await import("../src/app/shopping-list/page");
 const { default: PlannerPage } = await import("../src/app/planner/page");
 
@@ -164,6 +164,7 @@ describe("pantry unit integrity", () => {
 });
 
 type Item = { id: string; ingredientName: string; quantity: number; unit: string; unitId: string | null; source: "AUTO" | "MANUAL"; status: "BOUGHT" | "PENDING" | "SKIPPED" };
+const entryFields = { id: "entry", recipeId: "recipe", recipeRevisionId: null, date: new Date("2030-04-03"), mealType: "DINNER" };
 let items: Item[];
 let ingredients: Array<{ name: string; quantity: number; unit: string; unitId?: string }>;
 function generateList() {
@@ -179,7 +180,7 @@ describe("shopping list refresh", () => {
       { id: "manual", ingredientName: "Rice", quantity: 100, unit: "g", unitId: "metric-gram", source: "MANUAL", status: "BOUGHT" },
     ];
     ingredients = [{ name: "rice", quantity: 300, unit: "grams" }, { name: "Salt", quantity: 2, unit: "g" }, { name: "Eggs", quantity: 2, unit: "pieces" }];
-    prisma.mealPlan.findUnique.mockImplementation(async () => ({ id: "plan", entries: [{ servingsOverride: null, recipeRevision: null, recipe: { householdId: "reader-household", servings: 1, ingredients } }] }));
+    prisma.mealPlan.findUnique.mockImplementation(async () => ({ id: "plan", entries: [{ ...entryFields, servingsOverride: null, recipeRevision: null, recipe: { householdId: "reader-household", servings: 1, ingredients } }] }));
     prisma.pantryItem.findMany.mockResolvedValue([]);
     prisma.shoppingList.upsert.mockResolvedValue({ id: "list" });
     prisma.shoppingListItem.findMany.mockImplementation(async () => items.filter((item) => item.source === "AUTO"));
@@ -230,7 +231,7 @@ describe("shopping list refresh", () => {
   });
 
   test("uses pinned ingredients instead of private live edits", async () => {
-    prisma.mealPlan.findUnique.mockResolvedValue({ id: "plan", entries: [{ servingsOverride: null, recipeRevision: { snapshot: { servings: 1, ingredients: [{ name: "Rice", quantity: 200, unit: "g" }] } }, recipe: { householdId: "other-household", servings: 1, ingredients: [{ name: "Secret ingredient", quantity: 1, unit: "g" }] } }] });
+    prisma.mealPlan.findUnique.mockResolvedValue({ id: "plan", entries: [{ ...entryFields, servingsOverride: null, recipeRevision: { snapshot: { servings: 1, ingredients: [{ name: "Rice", quantity: 200, unit: "g" }] } }, recipe: { householdId: "other-household", servings: 1, ingredients: [{ name: "Secret ingredient", quantity: 1, unit: "g" }] } }] });
     await generateList();
     expect(items.some((item) => item.ingredientName === "Secret ingredient")).toBe(false);
     expect(items.find((item) => item.id === "rice")?.status).toBe("BOUGHT");
@@ -289,5 +290,120 @@ describe("selected shopping week", () => {
     prisma.recipe.findMany.mockResolvedValue([]);
     const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
     expect(elements(page).map((element) => element.props.href)).toContain("/shopping-list?week=2030-04-01");
+  });
+});
+
+describe("shopping list freshness and planned servings", () => {
+  test("flags a changed plan and clears the notice after refresh", async () => {
+    const { getShoppingPlanFingerprint } = await import("../src/lib/shopping-list-state");
+    const entry = { ...entryFields, servingsOverride: 2 };
+    let fingerprint = getShoppingPlanFingerprint([entry]);
+    prisma.mealPlan.findUnique.mockImplementation(async () => ({ id: "plan", entries: [{ ...entry, recipeRevision: null, recipe: { householdId: "reader-household", servings: 2, ingredients: [] } }] }));
+    prisma.shoppingList.findFirst.mockImplementation(async () => ({ id: "list", planFingerprint: fingerprint, items: [] }));
+    expect((await getShoppingListForWeek("reader-household", new Date("2030-04-01")))?.isStale).toBe(false);
+    entry.servingsOverride = 4;
+    expect((await getShoppingListForWeek("reader-household", new Date("2030-04-01")))?.isStale).toBe(true);
+    prisma.pantryItem.findMany.mockResolvedValue([]);
+    prisma.shoppingListItem.findMany.mockResolvedValue([]);
+    prisma.shoppingList.upsert.mockImplementation(async ({ update }) => { fingerprint = update.planFingerprint; return { id: "list" }; });
+    await generateList();
+    expect((await getShoppingListForWeek("reader-household", new Date("2030-04-01")))?.isStale).toBe(false);
+  });
+
+  test("serving edits are household-scoped and invalidate shopping and cook views", async () => {
+    prisma.recipe.findMany.mockResolvedValue([]);
+    prisma.mealPlan.findUnique.mockResolvedValue({ id: "plan", entries: [{ ...entryFields, servingsOverride: 2, recipe: { id: "recipe", title: "Rice", servings: 2, imageUrl: null }, recipeRevision: null }] });
+    const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
+    const form = elements(page).find((element) => element.props.className === "planned-servings")!;
+    const data = new FormData(); data.set("entryId", "entry"); data.set("servings", "4");
+    await (form.props.action as (data: FormData) => Promise<void>)(data);
+    expect(prisma.mealPlanEntry.updateMany).toHaveBeenCalledWith({ where: { id: "entry", mealPlan: { householdId: "reader-household" } }, data: { servingsOverride: 4 } });
+    expect(revalidatePath).toHaveBeenCalledWith("/shopping-list");
+    expect(revalidatePath).toHaveBeenCalledWith("/cook");
+    data.set("servings", "0.5");
+    await expect((form.props.action as (data: FormData) => Promise<void>)(data)).rejects.toThrow("whole servings");
+    expect(prisma.mealPlanEntry.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([0, -1, 0.5, 101, "bad"])("rejects invalid API servings %s", async (servingsOverride) => {
+    expect((await planMeals(request("/api/meal-plans", { entries: [{ date: "2030-04-03", mealType: "DINNER", recipeId: "recipe", servingsOverride }] }))).status).toBe(400);
+    expect(prisma.mealPlanEntry.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("recipe import model policy at the API boundary", () => {
+  let server: ReturnType<typeof Bun.serve>;
+  let catalog = ["gpt-5.6-luna", "gpt-5.4-mini", "gpt-6-astra"];
+  let catalogStatus = 200;
+  let catalogCalls = 0;
+  let completions: Array<Record<string, unknown>> = [];
+  let savedEnvironment: Record<string, string | undefined>;
+  const environmentKeys = ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_ALLOWED_MODELS"];
+
+  beforeEach(() => {
+    catalog = ["gpt-5.6-luna", "gpt-5.4-mini", "gpt-6-astra"];
+    catalogStatus = 200; catalogCalls = 0; completions = [];
+    savedEnvironment = Object.fromEntries(environmentKeys.map((key) => [key, process.env[key]]));
+    server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        if (new URL(request.url).pathname === "/v1/models") {
+          catalogCalls++;
+          return Response.json({ data: catalog.map((id) => ({ id })) }, { status: catalogStatus });
+        }
+        completions.push(await request.json() as Record<string, unknown>);
+        return Response.json({ choices: [{ message: { content: JSON.stringify({ title: "Rice", servings: 2, ingredientComponents: [], instructionComponents: [] }) } }] });
+      },
+    });
+    process.env.AI_BASE_URL = `${server.url.origin}/v1`;
+    process.env.AI_API_KEY = "test-provider-key";
+    process.env.AI_MODEL = "gpt-5.6-luna";
+    process.env.AI_ALLOWED_MODELS = "gpt-5.4-mini";
+  });
+  afterEach(() => {
+    server.stop(true);
+    for (const key of environmentKeys) {
+      if (savedEnvironment[key] === undefined) delete process.env[key]; else process.env[key] = savedEnvironment[key];
+    }
+  });
+
+  async function parse(body: unknown) {
+    const { POST } = await import("../src/app/api/recipes/parse/route");
+    return POST(request("/api/recipes/parse", body));
+  }
+
+  test("uses the default and bounds completion tokens", async () => {
+    expect((await parse({ text: "Cook rice." })).status).toBe(200);
+    expect(completions[0]).toMatchObject({ model: "gpt-5.6-luna", max_completion_tokens: 8192, reasoning_effort: "low" });
+  });
+  test("honors an explicitly selected approved provider model", async () => {
+    expect((await parse({ text: "Cook rice.", model: "gpt-5.4-mini" })).status).toBe(200);
+    expect(completions[0].model).toBe("gpt-5.4-mini");
+  });
+  test("rejects a forged expensive model before contacting the provider", async () => {
+    expect((await parse({ text: "Cook rice.", model: "gpt-6-astra" })).status).toBe(400);
+    expect(catalogCalls).toBe(0);
+    expect(completions).toHaveLength(0);
+  });
+  test("does not fall back when the default disappears", async () => {
+    catalog = ["gpt-5.4-mini", "gpt-6-astra"];
+    expect((await parse({ text: "Cook rice." })).status).toBe(503);
+    expect(completions).toHaveLength(0);
+  });
+  test("does not guess or retry when model discovery fails", async () => {
+    catalogStatus = 503;
+    expect((await parse({ text: "Cook rice." })).status).toBe(503);
+    expect(catalogCalls).toBe(1);
+    expect(completions).toHaveLength(0);
+  });
+  test("rejects oversized input before any provider call", async () => {
+    expect((await parse({ text: "x".repeat(50_001) })).status).toBe(400);
+    expect(catalogCalls).toBe(0);
+  });
+  test("UI discovery filters the catalog and invalidates cached choices on policy changes", async () => {
+    const { getAiRecipeImportStatus } = await import("../src/lib/ai-config");
+    expect((await getAiRecipeImportStatus()).models).toEqual(["gpt-5.6-luna", "gpt-5.4-mini"]);
+    delete process.env.AI_ALLOWED_MODELS;
+    expect((await getAiRecipeImportStatus()).models).toEqual(["gpt-5.6-luna"]);
   });
 });

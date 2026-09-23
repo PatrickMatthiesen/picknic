@@ -26,5 +26,5 @@ export default async function NewRecipePage() {
   }
 
   const aiRecipeImport = await getAiRecipeImportStatus();
-  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={aiRecipeImport.available} aiRecipeImportModel={aiRecipeImport.model} /></main>;
+  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={aiRecipeImport.available} aiRecipeImportModel={aiRecipeImport.model} aiRecipeImportModels={aiRecipeImport.models} /></main>;
 }

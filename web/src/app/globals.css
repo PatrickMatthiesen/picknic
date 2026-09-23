@@ -138,7 +138,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .planned-meal img { display: block; width: 100%; height: 92px; object-fit: cover; }
 .planned-badge { position: absolute; top: 70px; left: 0; background: var(--dinner); color: #282014; padding: 3px 7px; font-size: 0.65rem; font-weight: 700; }
 .planned-meal > a { display: block; min-height: 52px; padding: 8px 30px 8px 8px; color: var(--ink); font-size: 0.78rem; font-weight: 600; line-height: 1.35; text-decoration: none; overflow-wrap: anywhere; }
-.planned-meal form { position: absolute; right: 4px; bottom: 5px; }
+.planned-meal .remove-planned-meal { position: absolute; right: 4px; top: 100px; }
 .planned-meal button, .extra-meals button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
 .planned-meal button:hover, .extra-meals button:hover { color: var(--danger); }
 .empty-meal { display: flex; min-height: 152px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px dashed color-mix(in srgb, var(--primary) 45%, var(--divider)); border-radius: 8px; color: var(--primary); text-align: center; text-decoration: none; }
@@ -149,7 +149,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .extra-meals > div { position: relative; display: grid; gap: 2px; border-top: 1px solid var(--divider); padding: 8px 28px 0 0; }
 .extra-meals span { color: var(--muted); font-size: 0.65rem; }
 .extra-meals a { color: var(--ink); font-size: 0.72rem; font-weight: 600; text-decoration: none; }
-.extra-meals form { position: absolute; right: 0; bottom: 0; }
+.extra-meals .remove-planned-meal { position: absolute; right: 0; bottom: 0; }
 .add-meal-menu { position: relative; margin-top: 10px; }
 .add-meal-menu summary { display: flex; min-height: 36px; cursor: pointer; list-style: none; align-items: center; justify-content: center; gap: 5px; border: 1px dashed var(--divider); border-radius: 8px; color: var(--primary); font-size: 0.7rem; }
 .add-meal-menu summary::-webkit-details-marker { display: none; }
@@ -501,6 +501,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .week-day { flex: 0 0 min(84vw, 360px); scroll-snap-align: center; border-right: 1px solid var(--divider); padding: 16px; }
   .week-day > header { margin: -16px -16px 16px; padding: 12px 16px; }
   .planned-meal img { height: 160px; }
+  .planned-meal .remove-planned-meal { top: 168px; }
   .planned-badge { top: 138px; }
   .empty-meal { min-height: 220px; }
   .recipe-tray { margin-inline: -16px; border-inline: 0; border-radius: 0; padding: 16px; }
@@ -567,3 +568,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+.planned-servings { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; }
+.planned-servings label { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
+.planned-servings input { width: 58px; min-height: 44px; border: 1px solid var(--divider); border-radius: 6px; padding: 4px; background: var(--surface); color: var(--ink); }
+.planned-servings button { width: auto; min-height: 44px; padding: 0 8px; color: var(--ink); border: 1px solid var(--divider); border-radius: 6px; }
+.shopping-plan-notice { padding: 12px 16px; background: var(--primary-soft); color: var(--ink); border: 1px solid var(--divider); border-radius: 8px; }
+
+.recipe-model-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.875rem; }
+.recipe-model-choice select { min-height: 44px; max-width: 100%; background: var(--surface); color: var(--ink); border: 1px solid var(--divider); border-radius: 6px; padding: 8px; }
+
+.planned-servings button:hover { color: var(--primary); }

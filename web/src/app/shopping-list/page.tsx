@@ -169,6 +169,12 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
         </div>
       }
     >
+      {shoppingList?.isStale ? (
+        <p className="shopping-plan-notice" role="status">
+          Your meal plan may have changed since this list was generated. Refresh to update quantities;
+          checked items and manual additions are preserved.
+        </p>
+      ) : null}
       <section className="app-theme-card rounded-3xl p-5">
           <h2 className="text-lg font-semibold">Generate list from meal plan</h2>
           <p className="app-theme-muted mt-2 text-sm">

@@ -1,37 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { selectAvailableAiModel } from "./ai-model";
+import { getAvailableApprovedModels, selectAvailableAiModel } from "./ai-model";
 
 describe("AI model selection", () => {
-  test("keeps the configured model when it is available", () => {
-    expect(
-      selectAvailableAiModel("gpt-5.4-mini", ["gpt-5.5-mini", "gpt-5.4-mini"]),
-    ).toBe("gpt-5.4-mini");
+  test("uses the requested model when it is available", () => {
+    expect(selectAvailableAiModel("gpt-5.6-luna", ["gpt-6-astra", "gpt-5.6-luna"])).toBe("gpt-5.6-luna");
   });
-
-  test("selects the newest small GPT model when the configured model disappears", () => {
-    expect(
-      selectAvailableAiModel("gpt-5.4-mini", [
-        "gpt-5.3-mini",
-        "gpt-5.5",
-        "gpt-5.5-mini",
-        "gpt-image-2",
-      ]),
-    ).toBe("gpt-5.5-mini");
+  test("never silently falls back to another model", () => {
+    expect(selectAvailableAiModel("missing-model", ["gpt-5.4-mini", "gpt-6-astra"])).toBeNull();
   });
-
-  test("falls back to the newest text GPT model when no small model exists", () => {
-    expect(
-      selectAvailableAiModel("retired-model", ["gpt-5.4", "gpt-5.6", "gpt-5.5"]),
-    ).toBe("gpt-5.6");
+  test("offers only approved models present in the provider catalog", () => {
+    expect(getAvailableApprovedModels(["gpt-5.6-luna", "gpt-5.4-mini", "missing"], ["gpt-6-astra", "gpt-5.4-mini", "gpt-5.6-luna"])).toEqual(["gpt-5.6-luna", "gpt-5.4-mini"]);
   });
-
-  test("uses a deterministic non-media fallback for other providers", () => {
-    expect(
-      selectAvailableAiModel("retired-model", ["zeta-chat", "audio-preview", "alpha-chat"]),
-    ).toBe("alpha-chat");
-  });
-
-  test("returns null when the proxy exposes no usable models", () => {
-    expect(selectAvailableAiModel("gpt-5.4-mini", ["gpt-image-2", "audio-preview"])).toBeNull();
+  test("does not offer non-text models or duplicate choices", () => {
+    expect(getAvailableApprovedModels(["gpt-image-2", "gpt-5.6-luna", "gpt-5.6-luna"], ["gpt-image-2", "gpt-5.6-luna"])).toEqual(["gpt-5.6-luna"]);
   });
 });

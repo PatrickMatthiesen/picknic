@@ -131,6 +131,7 @@ jobs:
           (
             cd web
             DATABASE_URL="$database_url" bunx prisma migrate status
+            DATABASE_URL="$database_url" PICKNIC_INTEGRATION_TESTS=1 bun run test:integration
           )
 
           curl --fail --silent --show-error "$web_url/" > /dev/null
