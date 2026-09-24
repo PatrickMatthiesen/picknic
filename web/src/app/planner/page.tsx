@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { AppPageShell } from "@/app/_components/page-shell";
 import { RecipeImage } from "@/app/_components/recipe-image";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
-import { addUtcDays, getDateKey, getWeekStartUtc, parseDateKey, toUtcDate } from "@/lib/meal-plan";
+import { addUtcDays, getDateKey, getWeekStartUtc, MAX_PLANNED_SERVINGS, parseDateKey, parsePlannedServings, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { formatMealType } from "@/lib/recipe-display";
 import { ensureRecipeRevision, getPlanningRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
@@ -108,7 +108,33 @@ export default async function PlannerPage({ searchParams }: PageProps) {
       create: { mealPlanId: plan.id, recipeId, recipeRevisionId: revision.id, date: toUtcDate(date), mealType },
     });
     revalidatePath("/planner");
+    revalidatePath("/shopping-list");
     redirect(returnTo);
+  }
+
+  async function updateServings(formData: FormData) {
+    "use server";
+    const entryId = String(formData.get("entryId") ?? "");
+    const servingsOverride = parsePlannedServings(formData.get("servings"));
+    if (!entryId || servingsOverride === null) throw new Error("Choose 1–100 whole servings.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    await prisma.mealPlanEntry.updateMany({
+      where: { id: entryId, mealPlan: { householdId: activeMembership.householdId } },
+      data: { servingsOverride },
+    });
+    revalidatePath("/planner");
+    revalidatePath("/shopping-list");
+    revalidatePath("/cook");
+  }
+
+  function servingsControl(entry: { id: string; servingsOverride: number | null }, recipe: { servings: number; title: string }) {
+    return <form action={updateServings} className="planned-servings" key={`${entry.id}:${entry.servingsOverride ?? recipe.servings}`}>
+      <input name="entryId" type="hidden" value={entry.id} />
+      <label><span>Serves</span><input aria-label={`Servings for ${recipe.title}`} defaultValue={entry.servingsOverride ?? recipe.servings} min={1} max={MAX_PLANNED_SERVINGS} name="servings" required step={1} type="number" /></label>
+      <button type="submit">Save</button>
+    </form>;
   }
 
   async function removeEntry(formData: FormData) {
@@ -120,6 +146,7 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     if (!activeMembership) throw new Error("No household is connected to this account.");
     await prisma.mealPlanEntry.deleteMany({ where: { id: entryId, mealPlan: { householdId: activeMembership.householdId } } });
     revalidatePath("/planner");
+    revalidatePath("/shopping-list");
     redirect(returnTo);
   }
 
@@ -229,7 +256,8 @@ export default async function PlannerPage({ searchParams }: PageProps) {
                     <RecipeImage alt="" height={112} loading="eager" recipe={dinnerRecipe} width={168} />
                     <span className="planned-badge">Planned</span>
                     <Link href={`/recipes/${dinner.recipe.id}`}>{dinnerRecipe.title}</Link>
-                    <form action={removeEntry}>
+                    {servingsControl(dinner, dinnerRecipe)}
+                    <form action={removeEntry} className="remove-planned-meal">
                       <input name="entryId" type="hidden" value={dinner.id} />
                       <input name="returnTo" type="hidden" value={returnTo} />
                       <button aria-label={`Remove ${dinnerRecipe.title} from ${dateKey}`} type="submit"><Trash2 size={15} /></button>
@@ -250,7 +278,8 @@ export default async function PlannerPage({ searchParams }: PageProps) {
                     return <div key={entry.id}>
                       <span>{formatMealType(entry.mealType)}</span>
                       <Link href={`/recipes/${entry.recipe.id}`}>{plannedRecipe.title}</Link>
-                      <form action={removeEntry}>
+                      {servingsControl(entry, plannedRecipe)}
+                      <form action={removeEntry} className="remove-planned-meal">
                         <input name="entryId" type="hidden" value={entry.id} />
                         <input name="returnTo" type="hidden" value={returnTo} />
                         <button aria-label={`Remove ${plannedRecipe.title}`} type="submit"><Trash2 size={14} /></button>

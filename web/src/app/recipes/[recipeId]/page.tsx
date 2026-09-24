@@ -279,7 +279,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       maxWidthClassName="max-w-6xl"
     >
       <section className="recipe-detail-hero">
-        <RecipeImage alt="" height={360} priority recipe={recipe} width={720} />
+        <RecipeImage alt="" height={360} priority recipe={{ id: recipe.id, imageUrl: recipe.imageUrl }} width={720} />
         <div>
           <dl><div><dt>Servings</dt><dd>{recipe.servings}</dd></div><div><dt>Ingredients</dt><dd>{recipe.ingredients.length}</dd></div><div><dt>Steps</dt><dd>{recipe.steps.length}</dd></div>{recipe.totalTimeMinutes ? <div><dt>Total time</dt><dd>{recipe.totalTimeMinutes} min</dd></div> : null}</dl>
           <div className="recipe-detail-tags">{recipe.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>

@@ -55,6 +55,14 @@ aspire stop
 
 PostgreSQL uses the named Docker volume `picknic-postgres`, so stopping Aspire does not delete development data.
 
+## Planning and shopping
+
+Use **Shop this week** in the planner to open the selected week’s shopping list. Each
+planned meal has a servings control; changes update Cook mode and are included the next
+time you refresh groceries. A notice appears when the plan differs from the last generated
+list. Refresh keeps matching items’ checked/skipped status and manual additions. Existing
+lists prompt for one refresh after upgrading to establish their plan history.
+
 ## Optional AI recipe import
 
 AI-assisted recipe parsing uses the `ai-proxy` CLIProxyAPI resource in Aspire. Picknic
@@ -74,9 +82,17 @@ docker run --rm -it `
 ```
 
 The internal proxy API key defaults to `picknic-local-ai`; it is not an OpenAI credential.
-`Parameters:ai-model` is the preferred model. Picknic checks `/v1/models` before parsing:
-it uses that preference when available, otherwise it deterministically selects the newest
-available small GPT model, then the newest text GPT model, then another non-media model.
+`Parameters:ai-model` sets the default model (`gpt-5.6-luna`).
+`Parameters:ai-allowed-models` is a comma-separated list of additional approved models;
+the default is always approved. Picknic intersects this list with the provider's `/v1/models`
+catalog and offers those choices in the recipe editor. Both the UI and the parse endpoint
+use the same policy. Unavailable models and catalog failures stop import; they never cause
+an automatic switch to a different model. Keep expensive models out of the allowlist unless
+you intend to pay for their use.
+
+Imports are limited to 50,000 input characters and 8,192 completion tokens, with a 60-second
+provider timeout and no automatic retries. These bound an individual request, not total
+spending; provider billing or subscription quotas still apply.
 
 ## Validate changes
 
@@ -86,7 +102,7 @@ Run the repository checks from the root:
 bun run check
 ```
 
-The local check includes the high-severity dependency audit. CI performs a frozen Bun install, Prisma generation and schema validation, typechecking, tests, linting, a production build, and a high-severity dependency audit. In that same job, it installs the dev-channel Aspire CLI, starts the file-based AppHost in isolation, waits for an Aspire-provisioned PostgreSQL database and the web app, verifies migrations against that database, checks the live public and unauthorized API behavior, and then stops Aspire. Required CI checks do not receive real WorkOS or AI provider credentials; a real WorkOS sign-in remains an optional staging smoke test.
+The local check includes the high-severity dependency audit. CI performs a frozen Bun install, Prisma generation and schema validation, typechecking, tests, linting, a production build, and a high-severity dependency audit. In that same job, it installs the dev-channel Aspire CLI, starts the file-based AppHost in isolation, waits for an Aspire-provisioned PostgreSQL database and the web app, verifies migrations against that database, runs PostgreSQL integration tests for planning, shopping refresh, and recipe privacy, checks the live public and unauthorized API behavior, and then stops Aspire. Required CI checks do not receive real WorkOS or AI provider credentials; a real WorkOS sign-in remains an optional staging smoke test.
 
 ## Deployment
 
@@ -99,7 +115,10 @@ Create a GitHub environment named `Production` with these secrets:
 - `PICKNIC_POSTGRES_PASSWORD`
 - `PICKNIC_WORKOS_CLIENT_ID`, `PICKNIC_WORKOS_API_KEY`, and `PICKNIC_WORKOS_COOKIE_PASSWORD`
 
-Add `PICKNIC_WORKOS_REDIRECT_URI` as an environment variable containing the complete public callback URL, such as `https://picknic.example.com/callback`. Optionally set `PICKNIC_AI_MODEL` to override the default model. The deployed `ai-proxy` uses the persistent `picknic-cliproxy-auth` Docker volume; complete its Codex device login on the Docker host before using AI recipe import. Picknic checks the proxy model catalog and only renders the import control when a usable text model is available.
+Add `PICKNIC_WORKOS_REDIRECT_URI` as an environment variable containing the complete public callback URL, such as `https://picknic.example.com/callback`. Set `PICKNIC_AI_MODEL` to override the default model and `PICKNIC_AI_ALLOWED_MODELS` to
+allow additional model IDs (comma-separated). The manual deployment form also accepts
+`ai_model` and `ai_allowed_models` overrides for that deployment. With no overrides, only
+`gpt-5.6-luna` is enabled. The deployed `ai-proxy` uses the persistent `picknic-cliproxy-auth` Docker volume; complete its Codex device login on the Docker host before using AI recipe import. Picknic checks the proxy model catalog and only renders the import control when an approved text model is available. If the default is unavailable, the user must explicitly choose an approved alternative.
 
 For a deployed environment, run the login inside its existing proxy container. This uses
 the config baked into the deployed image and the correct Compose-managed OAuth volume:

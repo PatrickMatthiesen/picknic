@@ -155,6 +155,15 @@ Picknic is flat by default. Depth comes from canvas-versus-surface tone, one-pix
 - **Focus:** Sage border plus visible focus outline.
 - **Error / Disabled:** Tomato for errors; disabled controls retain shape and use reduced opacity.
 
+### Recipe editor density
+
+- Title and description fields grow with their content without reserving extra blank lines.
+- The paste panel starts with three text rows. Its model selector and action share a wrapping row.
+- Editor toolbar and settings controls use 36px targets on pointer devices above 760px. Narrow screens and touch devices retain 44px targets.
+- Separate writing sections by 24px and components by 16px. Keep the ingredient and instruction rows readable.
+- Below 1280px, settings follow the editor in two equal columns. A small photo preview shares the first row with the image URL; fields use the space beneath both. Below 761px, settings return to one column. Mobile bottom padding reserves space for the fixed save actions and navigation.
+- The paste panel has a 4px top inset and 16px side and bottom insets.
+
 ### Navigation
 - Desktop uses a quiet 196px left rail with icons and text. Active navigation uses Soft Sage. At 900px and below, navigation becomes a fixed five-item bottom bar with icon-above-label targets.
 

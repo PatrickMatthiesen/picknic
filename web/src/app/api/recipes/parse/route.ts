@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
-import { parseRecipeWithAi, RecipeParserNotConfiguredError } from "@/lib/recipe-parser";
+import { parseRecipeWithAi, RecipeImportInputError, RecipeParserNotConfiguredError } from "@/lib/recipe-parser";
 
-type ParsePayload = { text?: unknown };
+type ParsePayload = { text?: unknown; model?: unknown };
 
 export async function POST(request: Request) {
   const payload = (await request.json()) as ParsePayload;
+  if (payload.model !== undefined && typeof payload.model !== "string") {
+    return NextResponse.json({ error: "Model must be a model ID." }, { status: 400 });
+  }
   const text = typeof payload.text === "string" ? payload.text.trim() : "";
 
   if (!text) {
@@ -19,9 +22,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const recipe = await parseRecipeWithAi(text);
+    const recipe = await parseRecipeWithAi(text, payload.model as string | undefined);
     return NextResponse.json({ data: recipe });
   } catch (error) {
+    if (error instanceof RecipeImportInputError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     if (error instanceof RecipeParserNotConfiguredError) {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }

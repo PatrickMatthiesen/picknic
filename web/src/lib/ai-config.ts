@@ -1,4 +1,4 @@
-import { selectAvailableAiModel } from "@/lib/ai-model";
+import { getAiModelPolicy, getAvailableApprovedModels, selectAvailableAiModel } from "@/lib/ai-model";
 
 type ModelCatalog = {
   data?: Array<{ id?: unknown }>;
@@ -13,6 +13,7 @@ type AvailabilityCache = {
 export type AiRecipeImportStatus = {
   available: boolean;
   model: string | null;
+  models: string[];
 };
 
 const availabilityCacheDurationMs = 30_000;
@@ -36,18 +37,20 @@ export function hasUsableAiRecipeModel(
 export function resolveAiRecipeImportStatus(
   preferredModel: string,
   modelIds: string[],
+  allowedModels: string[] = [preferredModel],
 ): AiRecipeImportStatus {
-  const model = selectAvailableAiModel(preferredModel, modelIds);
-  return { available: model !== null, model };
+  const models = getAvailableApprovedModels(allowedModels, modelIds);
+  const model = selectAvailableAiModel(preferredModel, models);
+  return { available: models.length > 0, model, models };
 }
 
 export async function getAiRecipeImportStatus(): Promise<AiRecipeImportStatus> {
   const apiKey = process.env.AI_API_KEY?.trim();
-  if (!apiKey) return { available: false, model: null };
+  if (!apiKey) return { available: false, model: null, models: [] };
 
   const endpoint = resolveBaseUrl(process.env.AI_BASE_URL ?? "http://localhost:8317/v1");
-  const preferredModel = process.env.AI_MODEL ?? "gpt-5.6-luna";
-  const signature = `${endpoint}|${preferredModel}`;
+  const { defaultModel: preferredModel, allowedModels } = getAiModelPolicy();
+  const signature = JSON.stringify([endpoint, preferredModel, allowedModels, apiKey]);
   const now = Date.now();
   if (
     availabilityCache
@@ -57,7 +60,7 @@ export async function getAiRecipeImportStatus(): Promise<AiRecipeImportStatus> {
     return availabilityCache.value;
   }
 
-  let model: string | null = null;
+  let value: AiRecipeImportStatus = { available: false, model: null, models: [] };
   try {
     const response = await fetch(`${endpoint}/models`, {
       cache: "no-store",
@@ -69,13 +72,12 @@ export async function getAiRecipeImportStatus(): Promise<AiRecipeImportStatus> {
       const modelIds = (catalog.data ?? [])
         .map((model) => model.id)
         .filter((id): id is string => typeof id === "string");
-      model = resolveAiRecipeImportStatus(preferredModel, modelIds).model;
+      value = resolveAiRecipeImportStatus(preferredModel, modelIds, allowedModels);
     }
   } catch {
-    model = null;
+    value = { available: false, model: null, models: [] };
   }
 
-  const value = { available: model !== null, model };
   availabilityCache = {
     expiresAt: now + availabilityCacheDurationMs,
     signature,

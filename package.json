@@ -8,6 +8,7 @@
         "test:ai": "bun run --cwd web test:ai",
         "dockercompose:up": "cd apphost/aspire-output && docker compose up -d",
         "dockercompose:down": "cd apphost/aspire-output && docker compose down",
-        "dockercompose:logs": "cd apphost/aspire-output && docker compose logs -f"
+        "dockercompose:logs": "cd apphost/aspire-output && docker compose logs -f",
+        "test:integration": "bun run --cwd web test:integration"
     }
 }

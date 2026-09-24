@@ -2,6 +2,15 @@ name: Deploy Picknic
 
 on:
   workflow_dispatch:
+    inputs:
+      ai_model:
+        description: "Default recipe model (blank uses the Production variable)"
+        required: false
+        type: string
+      ai_allowed_models:
+        description: "Extra approved recipe model IDs, comma-separated (blank uses the Production variable)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -43,7 +52,8 @@ jobs:
 
       - name: Publish Docker Compose artifacts
         env:
-          Parameters__ai_model: ${{ vars.PICKNIC_AI_MODEL || 'gpt-5.6-luna' }}
+          Parameters__ai_model: ${{ inputs.ai_model || vars.PICKNIC_AI_MODEL || 'gpt-5.6-luna' }}
+          Parameters__ai_allowed_models: ${{ inputs.ai_allowed_models || vars.PICKNIC_AI_ALLOWED_MODELS || inputs.ai_model || vars.PICKNIC_AI_MODEL || 'gpt-5.6-luna' }}
           Parameters__postgres_password: ${{ secrets.PICKNIC_POSTGRES_PASSWORD }}
           Parameters__workos_api_key: ${{ secrets.PICKNIC_WORKOS_API_KEY }}
           Parameters__workos_client_id: ${{ secrets.PICKNIC_WORKOS_CLIENT_ID }}
@@ -73,7 +83,8 @@ jobs:
           ASPIRE_CONTAINER_RUNTIME: docker
           DEPLOY_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_USER: ${{ secrets.SSH_USER }}
-          Parameters__ai_model: ${{ vars.PICKNIC_AI_MODEL || 'gpt-5.6-luna' }}
+          Parameters__ai_model: ${{ inputs.ai_model || vars.PICKNIC_AI_MODEL || 'gpt-5.6-luna' }}
+          Parameters__ai_allowed_models: ${{ inputs.ai_allowed_models || vars.PICKNIC_AI_ALLOWED_MODELS || inputs.ai_model || vars.PICKNIC_AI_MODEL || 'gpt-5.6-luna' }}
           Parameters__postgres_password: ${{ secrets.PICKNIC_POSTGRES_PASSWORD }}
           Parameters__workos_api_key: ${{ secrets.PICKNIC_WORKOS_API_KEY }}
           Parameters__workos_client_id: ${{ secrets.PICKNIC_WORKOS_CLIENT_ID }}

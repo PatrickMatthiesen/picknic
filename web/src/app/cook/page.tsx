@@ -72,7 +72,7 @@ export default async function CookPage({ searchParams }: PageProps) {
         <div className="cook-picker-header"><Link href={`/planner?day=${dateKey}`}><ArrowLeft size={18} /> Back to this week</Link><div><ChefHat size={22} /><h1>What are you cooking?</h1><p>{date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" })}</p></div></div>
         <section>{entries.map((entry) => {
           const recipe = getCookRecipe(entry);
-          return <Link href={`/cook?date=${dateKey}&entry=${entry.id}`} key={entry.id}><RecipeImage alt="" height={220} recipe={recipe} width={330} /><span>{entry.mealType.toLowerCase()}</span><strong className="recipe-title">{recipe.title}</strong><small>Serves {entry.servingsOverride ?? recipe.servings}</small></Link>;
+          return <Link href={`/cook?date=${dateKey}&entry=${entry.id}`} key={entry.id}><RecipeImage alt="" height={220} recipe={{ id: recipe.id, imageUrl: recipe.imageUrl }} width={330} /><span>{entry.mealType.toLowerCase()}</span><strong className="recipe-title">{recipe.title}</strong><small>Serves {entry.servingsOverride ?? recipe.servings}</small></Link>;
         })}</section>
       </main>
     );

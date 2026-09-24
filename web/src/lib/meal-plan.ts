@@ -34,3 +34,11 @@ export function addUtcDays(date: Date, days: number): Date {
 export function getDateKey(date: Date): string {
   return toUtcDate(date).toISOString().slice(0, 10);
 }
+
+export const MAX_PLANNED_SERVINGS = 100;
+
+export function parsePlannedServings(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const servings = Number(value);
+  return Number.isInteger(servings) && servings >= 1 && servings <= MAX_PLANNED_SERVINGS ? servings : null;
+}

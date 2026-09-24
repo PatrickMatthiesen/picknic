@@ -25,6 +25,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { UnitCombobox } from "@/app/_components/unit-combobox";
 import { getSupportedRecipeImageUrl } from "@/lib/recipe-display";
+import { MAX_RECIPE_IMPORT_CHARACTERS } from "@/lib/ai-model";
 import { MAX_RECIPE_MINUTES } from "@/lib/recipe-input";
 import {
   inferMeasurementSystem,
@@ -188,6 +189,7 @@ function SortableEditorRow({ children, className, disabled = false, handleLabel,
 type RecipeEditorClientProps = {
   aiRecipeImportEnabled?: boolean;
   aiRecipeImportModel?: string | null;
+  aiRecipeImportModels?: string[];
   initialDraft?: RecipeDraft;
   recipeId?: string;
 };
@@ -195,6 +197,7 @@ type RecipeEditorClientProps = {
 export function RecipeEditorClient({
   aiRecipeImportEnabled = false,
   aiRecipeImportModel = null,
+  aiRecipeImportModels = [],
   initialDraft = EMPTY_DRAFT,
   recipeId,
 }: RecipeEditorClientProps) {
@@ -205,6 +208,7 @@ export function RecipeEditorClient({
   const [draft, setDraft] = useState(preparedInitialDraft);
   const [tagsText, setTagsText] = useState(initialDraft.tags.join(", "));
   const [sourceText, setSourceText] = useState("");
+  const [selectedAiModel, setSelectedAiModel] = useState(aiRecipeImportModel ?? "");
   const [showImport, setShowImport] = useState(
     aiRecipeImportEnabled && searchParams.get("method") === "copy-paste",
   );
@@ -298,7 +302,7 @@ export function RecipeEditorClient({
       const response = await fetch("/api/recipes/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sourceText }),
+        body: JSON.stringify({ text: sourceText, model: selectedAiModel }),
       });
       const payload = (await response.json()) as {
         data?: {
@@ -564,12 +568,19 @@ export function RecipeEditorClient({
               <button aria-label="Close paste recipe" onClick={() => setShowImport(false)} type="button"><X size={18} /></button>
             </div>
             <div className="recipe-import-source">
-              <textarea id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={7} value={sourceText} />
-              {aiRecipeImportModel ? <span aria-label={`AI model ${aiRecipeImportModel}`} title="AI model">{aiRecipeImportModel}</span> : null}
+              <textarea maxLength={MAX_RECIPE_IMPORT_CHARACTERS} id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={3} value={sourceText} />
             </div>
-            <button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim()} onClick={parseRecipe} type="button">
-              {isParsing ? "Reading recipe…" : "Fill recipe details"}
-            </button>
+            <div className="recipe-import-actions">
+              <label className="recipe-model-choice">Model
+                <select disabled={isParsing} onChange={(event) => setSelectedAiModel(event.target.value)} value={selectedAiModel}>
+                  <option disabled value="">Choose an available model</option>
+                  {aiRecipeImportModels.map((model) => <option key={model} value={model}>{model}{model === aiRecipeImportModel ? " (default)" : ""}</option>)}
+                </select>
+              </label>
+              <button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim() || !selectedAiModel} onClick={parseRecipe} type="button">
+                {isParsing ? "Reading recipe…" : "Fill recipe details"}
+              </button>
+            </div>
           </section>
         ) : null}
 

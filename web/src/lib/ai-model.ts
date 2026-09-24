@@ -1,50 +1,25 @@
-const nonTextModelPattern =
-  /(?:image|audio|realtime|transcrib|speech|tts|embedding|moderation|computer-use)/i;
+const nonTextModelPattern = /(?:image|audio|realtime|transcrib|speech|tts|embedding|moderation|computer-use)/i;
 
-function compareGptVersionsDescending(left: string, right: string): number {
-  const versionFor = (model: string) =>
-    model
-      .match(/^gpt-(\d+(?:\.\d+)*)/i)?.[1]
-      ?.split(".")
-      .map(Number) ?? [];
+export const DEFAULT_AI_MODEL = "gpt-5.6-luna";
+export const MAX_RECIPE_IMPORT_CHARACTERS = 50_000;
+export const MAX_RECIPE_IMPORT_OUTPUT_TOKENS = 8_192;
 
-  const leftVersion = versionFor(left);
-  const rightVersion = versionFor(right);
-  const length = Math.max(leftVersion.length, rightVersion.length);
+export function getAiModelPolicy() {
+  const defaultModel = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL;
+  // The explicitly configured default is always approved. Extra choices must
+  // be deliberately enabled by the deployment owner, never inferred by name.
+  const allowedModels = [...new Set([defaultModel, ...(process.env.AI_ALLOWED_MODELS ?? "").split(",")]
+    .map((model) => model.trim()).filter(Boolean))];
+  return { defaultModel, allowedModels };
+}
 
-  for (let index = 0; index < length; index += 1) {
-    const difference = (rightVersion[index] ?? 0) - (leftVersion[index] ?? 0);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-
-  return left.length - right.length || left.localeCompare(right);
+export function getAvailableApprovedModels(allowedModels: string[], modelIds: string[]): string[] {
+  const available = new Set(modelIds);
+  return [...new Set(allowedModels.map((model) => model.trim()).filter(Boolean))]
+    .filter((model) => available.has(model) && !nonTextModelPattern.test(model));
 }
 
 export function selectAvailableAiModel(preferredModel: string, modelIds: string[]): string | null {
-  const available = [...new Set(modelIds.map((model) => model.trim()).filter(Boolean))];
-  const preferred = available.find(
-    (model) => model.localeCompare(preferredModel.trim(), undefined, { sensitivity: "accent" }) === 0,
-  );
-  if (preferred) {
-    return preferred;
-  }
-
-  const textModels = available.filter((model) => !nonTextModelPattern.test(model));
-  const smallGptModels = textModels
-    .filter((model) => /^gpt-\d+(?:\.\d+)*-mini(?:$|-)/i.test(model))
-    .sort(compareGptVersionsDescending);
-  if (smallGptModels[0]) {
-    return smallGptModels[0];
-  }
-
-  const gptModels = textModels
-    .filter((model) => /^gpt-\d/i.test(model))
-    .sort(compareGptVersionsDescending);
-  if (gptModels[0]) {
-    return gptModels[0];
-  }
-
-  return textModels.sort((left, right) => left.localeCompare(right))[0] ?? null;
+  // Never silently fall back: availability does not imply permission or price.
+  return getAvailableApprovedModels([preferredModel], modelIds)[0] ?? null;
 }

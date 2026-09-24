@@ -1,5 +1,6 @@
 import { ShoppingItemSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getShoppingPlanFingerprint } from "@/lib/shopping-list-state";
 import { readRecipeSnapshot } from "@/lib/recipe-revisions";
 import { buildAutoShoppingItems, shoppingItemKey, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
 
@@ -11,19 +12,20 @@ export async function getShoppingListForWeek(householdId: string, weekStart: Dat
         weekStart,
       },
     },
-    select: { id: true },
+    include: { entries: true },
   });
 
   if (!mealPlan) {
     return null;
   }
 
-  return prisma.shoppingList.findFirst({
+  const list = await prisma.shoppingList.findFirst({
     where: { householdId, mealPlanId: mealPlan.id },
     include: {
       items: { orderBy: [{ status: "asc" }, { ingredientName: "asc" }] },
     },
   });
+  return list ? { ...list, isStale: list.planFingerprint !== getShoppingPlanFingerprint(mealPlan.entries) } : null;
 }
 
 export async function generateShoppingListForWeek({
@@ -87,6 +89,7 @@ export async function generateShoppingListForWeek({
     }),
   };
   const autoItems = subtractPantryFromShoppingItems(buildAutoShoppingItems(pinnedMealPlan), pantryItems);
+  const planFingerprint = getShoppingPlanFingerprint(mealPlan.entries);
   return prisma.$transaction(async (tx) => {
     // Upserting the parent inside the transaction also serializes refreshes for
     // this list, so concurrent requests cannot create duplicate generated items.
@@ -96,9 +99,10 @@ export async function generateShoppingListForWeek({
         householdId,
         mealPlanId: mealPlan.id,
         createdById: userId,
+        planFingerprint,
         name: `Week of ${weekStart.toISOString().slice(0, 10)}`,
       },
-      update: { name: `Week of ${weekStart.toISOString().slice(0, 10)}` },
+      update: { name: `Week of ${weekStart.toISOString().slice(0, 10)}`, planFingerprint },
       select: { id: true },
     });
     const existingItems = await tx.shoppingListItem.findMany({

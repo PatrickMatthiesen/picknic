@@ -1,6 +1,6 @@
 import { SpanStatusCode, trace, type Span } from "@opentelemetry/api";
 import OpenAI from "openai";
-import { selectAvailableAiModel } from "@/lib/ai-model";
+import { getAiModelPolicy, MAX_RECIPE_IMPORT_CHARACTERS, MAX_RECIPE_IMPORT_OUTPUT_TOKENS, selectAvailableAiModel } from "@/lib/ai-model";
 import { logAiEvent } from "@/lib/ai-telemetry";
 import { getRecipeUnitVocabulary } from "@/lib/units";
 
@@ -287,7 +287,7 @@ async function resolveModel(client: OpenAI, preferredModel: string): Promise<str
       );
       if (!model) {
         throw new RecipeParserNotConfiguredError(
-          "The AI proxy has no available text models. Complete provider login and try again.",
+          "The selected recipe model is unavailable. Choose another approved model or try again later.",
         );
       }
 
@@ -305,13 +305,6 @@ async function resolveModel(client: OpenAI, preferredModel: string): Promise<str
         durationMs,
       });
 
-      if (model !== preferredModel) {
-        logAiEvent("warn", "Configured AI model unavailable; using fallback", {
-          preferredModel,
-          selectedModel: model,
-        });
-      }
-
       return model;
     } catch (error) {
       recordSpanError(span, error);
@@ -319,19 +312,29 @@ async function resolveModel(client: OpenAI, preferredModel: string): Promise<str
         throw error;
       }
 
-      logAiEvent("warn", "Model discovery failed; using configured preference", {
+      logAiEvent("warn", "Model discovery failed; recipe import unavailable", {
         preferredModel,
         durationMs: elapsedMilliseconds(startedAt),
         error: error instanceof Error ? error.message : String(error),
       });
-      return preferredModel;
+      throw new RecipeParserNotConfiguredError("Unable to check available recipe models. Try again later.");
     } finally {
       span.end();
     }
   });
 }
 
-export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDraft> {
+export class RecipeImportInputError extends Error {}
+
+export async function parseRecipeWithAi(rawText: string, requestedModel?: string): Promise<ParsedRecipeDraft> {
+  if (!rawText.trim() || rawText.length > MAX_RECIPE_IMPORT_CHARACTERS) {
+    throw new RecipeImportInputError(`Paste between 1 and ${MAX_RECIPE_IMPORT_CHARACTERS.toLocaleString("en")} characters.`);
+  }
+  const { defaultModel, allowedModels } = getAiModelPolicy();
+  const preferredModel = requestedModel ?? defaultModel;
+  if (!allowedModels.includes(preferredModel)) {
+    throw new RecipeImportInputError("This model is not enabled for recipe import.");
+  }
   return tracer.startActiveSpan("recipe.parse", async (span) => {
     const startedAt = performance.now();
     const apiKey = process.env.AI_API_KEY;
@@ -343,7 +346,6 @@ export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDr
     }
 
     const endpoint = process.env.AI_BASE_URL ?? "http://localhost:8317/v1";
-    const preferredModel = process.env.AI_MODEL ?? "gpt-5.6-luna";
     const host = endpointHost(endpoint);
     span.setAttributes({
       "ai.gateway": host,
@@ -355,6 +357,8 @@ export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDr
       const client = new OpenAI({
         apiKey,
         baseURL: resolveBaseUrl(endpoint),
+        timeout: 60_000,
+        maxRetries: 0,
       });
       const model = await resolveModel(client, preferredModel);
       span.setAttribute("ai.selected_model", model);
@@ -371,6 +375,7 @@ export async function parseRecipeWithAi(rawText: string): Promise<ParsedRecipeDr
           const result = await client.chat.completions.create({
             model,
             reasoning_effort: RECIPE_REASONING_EFFORT,
+            max_completion_tokens: MAX_RECIPE_IMPORT_OUTPUT_TOKENS,
             response_format: recipeResponseFormat,
             messages: [
               {

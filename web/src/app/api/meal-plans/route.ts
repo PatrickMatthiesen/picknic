@@ -1,7 +1,7 @@
 import { MealType, RecipeVisibility } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
-import { getWeekStartUtc, toUtcDate } from "@/lib/meal-plan";
+import { getWeekStartUtc, parsePlannedServings, toUtcDate } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
 import { getPlanningRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
@@ -41,9 +41,7 @@ function parseEntries(input: unknown): Array<{
       const mealType = parseMealType(entry.mealType);
       const date = typeof entry.date === "string" ? toUtcDate(new Date(entry.date)) : null;
       const servingsOverride =
-        typeof entry.servingsOverride === "number" && entry.servingsOverride > 0
-          ? Math.floor(entry.servingsOverride)
-          : null;
+        parsePlannedServings(entry.servingsOverride);
 
       return {
         date,
@@ -109,6 +107,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const payload = (await request.json()) as MealPlanPayload;
+  if (Array.isArray(payload.entries) && payload.entries.some((entry) =>
+    entry && typeof entry === "object" && entry.servingsOverride != null
+    && parsePlannedServings(entry.servingsOverride) === null,
+  )) {
+    return NextResponse.json({ error: "Servings must be a whole number between 1 and 100." }, { status: 400 });
+  }
   const entries = parseEntries(payload.entries);
 
   if (entries.length === 0) {
