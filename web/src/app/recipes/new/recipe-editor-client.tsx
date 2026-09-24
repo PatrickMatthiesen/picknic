@@ -568,17 +568,19 @@ export function RecipeEditorClient({
               <button aria-label="Close paste recipe" onClick={() => setShowImport(false)} type="button"><X size={18} /></button>
             </div>
             <div className="recipe-import-source">
-              <textarea maxLength={MAX_RECIPE_IMPORT_CHARACTERS} id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={7} value={sourceText} />
+              <textarea maxLength={MAX_RECIPE_IMPORT_CHARACTERS} id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={3} value={sourceText} />
+            </div>
+            <div className="recipe-import-actions">
               <label className="recipe-model-choice">Model
                 <select disabled={isParsing} onChange={(event) => setSelectedAiModel(event.target.value)} value={selectedAiModel}>
                   <option disabled value="">Choose an available model</option>
                   {aiRecipeImportModels.map((model) => <option key={model} value={model}>{model}{model === aiRecipeImportModel ? " (default)" : ""}</option>)}
                 </select>
               </label>
+              <button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim() || !selectedAiModel} onClick={parseRecipe} type="button">
+                {isParsing ? "Reading recipe…" : "Fill recipe details"}
+              </button>
             </div>
-            <button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim() || !selectedAiModel} onClick={parseRecipe} type="button">
-              {isParsing ? "Reading recipe…" : "Fill recipe details"}
-            </button>
           </section>
         ) : null}
 
