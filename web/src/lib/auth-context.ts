@@ -1,5 +1,5 @@
 import { MembershipRole } from "@prisma/client";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { getWorkOS, withAuth } from "@workos-inc/authkit-nextjs";
 import { prisma } from "@/lib/prisma";
 
 export type AppAuthContext = {
@@ -72,6 +72,19 @@ export async function ensureLinkedProfile(
     return dbUser;
   }
 
+  // Session organization claims can outlive a membership removal. Check the
+  // provider on every organization request, including when a local row exists,
+  // so an in-flight profile upsert cannot permanently recreate removed access.
+  const memberships = await getWorkOS().userManagement.listOrganizationMemberships({
+    organizationId, userId: user.id, statuses: ["active"], limit: 1,
+  });
+  if (!memberships.data.some(member => member.organizationId === organizationId && member.userId === user.id && member.status === "active")) {
+    await prisma.householdMember.deleteMany({
+      where: { userId: dbUser.id, household: { workosOrganizationId: organizationId } },
+    });
+    return dbUser;
+  }
+
   const household = await prisma.household.upsert({
     where: { workosOrganizationId: organizationId },
     update: {},
@@ -125,13 +138,11 @@ export async function resolveActiveHouseholdId(userId: string, organizationId?: 
       select: { householdId: true },
     });
 
-    if (membership) {
-      return membership.householdId;
-    }
+    return membership?.householdId ?? null;
   }
 
   const fallbackMembership = await prisma.householdMember.findFirst({
-    where: { userId },
+    where: { userId, household: { personalForUserId: userId } },
     orderBy: { createdAt: "asc" },
     select: { householdId: true },
   });
@@ -152,13 +163,11 @@ export async function resolveActiveMembership(
       select: { householdId: true, role: true },
     });
 
-    if (membership) {
-      return membership;
-    }
+    return membership ?? null;
   }
 
   const fallbackMembership = await prisma.householdMember.findFirst({
-    where: { userId },
+    where: { userId, household: { personalForUserId: userId } },
     orderBy: { createdAt: "asc" },
     select: { householdId: true, role: true },
   });
