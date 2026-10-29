@@ -87,7 +87,7 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
   }
 
   return (
-    <main className="cook-session">
+    <section className="cook-session">
       <aside className="cook-sidebar">
         <Link className="cook-back" href={`/planner?day=${dateKey}`}><ArrowLeft size={18} /> Back to this week</Link>
         <div className="cook-servings"><span>Serves {servings}</span><div><button aria-label="Decrease servings" disabled={servings <= 1} onClick={() => setServings((value) => Math.max(1, value - 1))}><Minus size={17} /></button><strong>{servings}</strong><button aria-label="Increase servings" onClick={() => setServings((value) => value + 1)}><Plus size={17} /></button></div></div>
@@ -106,6 +106,6 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
         <header><div><h1 className="recipe-title">{recipe.title}</h1><p><span><Utensils size={17} /> {formatMealType(mealType)}</span></p></div><RecipeImage alt="" height={180} loading="eager" recipe={{ id: recipe.id, imageUrl }} width={300} /></header>
         <div className="cook-step-components">{stepGroups.map((group) => <section key={group.key}>{stepGroups.length > 1 || group.component ? <header><h2>{group.component || "Instructions"}</h2>{group.durationMinutes ? <span><Clock3 size={15} /> {group.durationMinutes} min</span> : null}</header> : null}<ol className="cook-steps">{group.steps.map((step) => { const complete = completedSteps.has(step.id); return <li className={complete ? "is-complete" : undefined} key={step.id}><button aria-label={`${complete ? "Mark step incomplete" : "Mark step complete"}: ${step.instruction}`} onClick={() => toggleStep(step.id)}>{complete ? <Check size={20} /> : step.position}</button><div><p>{step.instruction}</p>{step.advanceNotice || step.durationMinutes ? <small>{step.advanceNotice ? <span className="advance-notice"><BellRing size={14} /> Advance notice</span> : null}{step.durationMinutes ? <span><Clock3 size={14} /> {step.durationMinutes} min</span> : null}</small> : null}</div></li>; })}</ol></section>)}</div>
       </article>
-    </main>
+    </section>
   );
 }

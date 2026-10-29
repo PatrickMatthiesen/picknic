@@ -2,7 +2,7 @@ import { ShoppingItemSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getShoppingPlanFingerprint } from "@/lib/shopping-list-state";
 import { readRecipeSnapshot } from "@/lib/recipe-revisions";
-import { buildAutoShoppingItems, shoppingItemKey, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
+import { buildAutoShoppingItems, shoppingAggregateKey, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
 
 export async function getShoppingListForWeek(householdId: string, weekStart: Date) {
   const mealPlan = await prisma.mealPlan.findUnique({
@@ -15,9 +15,7 @@ export async function getShoppingListForWeek(householdId: string, weekStart: Dat
     include: { entries: true },
   });
 
-  if (!mealPlan) {
-    return null;
-  }
+  if (!mealPlan) return null;
 
   const list = await prisma.shoppingList.findFirst({
     where: { householdId, mealPlanId: mealPlan.id },
@@ -26,6 +24,15 @@ export async function getShoppingListForWeek(householdId: string, weekStart: Dat
     },
   });
   return list ? { ...list, isStale: list.planFingerprint !== getShoppingPlanFingerprint(mealPlan.entries) } : null;
+}
+
+export async function getStandaloneShoppingList(householdId: string) {
+  const list = await prisma.shoppingList.findFirst({
+    where: { householdId, mealPlanId: null },
+    orderBy: { createdAt: "asc" },
+    include: { items: { orderBy: [{ status: "asc" }, { ingredientName: "asc" }] } },
+  });
+  return list ? { ...list, isStale: false } : null;
 }
 
 export async function generateShoppingListForWeek({
@@ -72,12 +79,13 @@ export async function generateShoppingListForWeek({
   });
 
   const pinnedMealPlan = {
-    entries: mealPlan.entries.map((entry) => {
+    entries: mealPlan.entries.flatMap((entry) => {
+      if (!entry.recipe) return [];
       const snapshot = entry.recipeRevision ? readRecipeSnapshot(entry.recipeRevision.snapshot) : null;
       if (!snapshot && entry.recipe.householdId !== householdId) {
         throw new Error("A shared planned recipe is missing its pinned revision.");
       }
-      return {
+      return [{
         servingsOverride: entry.servingsOverride,
         recipe: snapshot
           ? {
@@ -85,7 +93,7 @@ export async function generateShoppingListForWeek({
               ingredients: snapshot.ingredients,
             }
           : entry.recipe,
-      };
+      }];
     }),
   };
   const autoItems = subtractPantryFromShoppingItems(buildAutoShoppingItems(pinnedMealPlan), pantryItems);
@@ -108,11 +116,11 @@ export async function generateShoppingListForWeek({
     const existingItems = await tx.shoppingListItem.findMany({
       where: { shoppingListId: shoppingList.id, source: ShoppingItemSource.AUTO },
     });
-    const existingByKey = new Map(existingItems.map((item) => [shoppingItemKey(item), item]));
+    const existingByKey = new Map(existingItems.map((item) => [shoppingAggregateKey(item), item]));
     const retainedIds: string[] = [];
 
     for (const item of autoItems) {
-      const existing = existingByKey.get(shoppingItemKey(item));
+      const existing = existingByKey.get(shoppingAggregateKey(item));
       if (existing) {
         retainedIds.push(existing.id);
         // Do not write status: keep checked/skipped state, including status

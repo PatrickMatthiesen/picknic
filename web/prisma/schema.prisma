@@ -26,6 +26,14 @@ enum MealType {
   OTHER
 }
 
+enum MealEntryKind {
+  RECIPE
+  LEFTOVERS
+  EATING_OUT
+  NOTE
+  NO_PLAN
+}
+
 enum RecipeVisibility {
   PRIVATE
   PUBLIC
@@ -49,12 +57,14 @@ model User {
   displayName       String?
   households        HouseholdMember[]
   mealPlans         MealPlan[]
+  mealPlanTemplates MealPlanTemplate[]
   pantryItems       PantryItem[]
   recipes           Recipe[]
   recipeRevisions   RecipeRevision[]
   savedRecipes      SavedRecipe[]
   recipeCollections RecipeCollection[]
   shoppingLists     ShoppingList[]
+  invitationAttempts HouseholdInvitationAttempt[]
   ownedHouseholds   Household[]        @relation("HouseholdOwner")
   personalHousehold Household?         @relation("PersonalHousehold")
   createdAt         DateTime           @default(now())
@@ -71,11 +81,27 @@ model Household {
   personalForUser      User?             @relation("PersonalHousehold", fields: [personalForUserId], references: [id], onDelete: Restrict)
   members              HouseholdMember[]
   mealPlans            MealPlan[]
+  mealPlanTemplates    MealPlanTemplate[]
   pantryItems          PantryItem[]
   recipes              Recipe[]
   shoppingLists        ShoppingList[]
+  invitationAttempts   HouseholdInvitationAttempt[]
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
+}
+
+model HouseholdInvitationAttempt {
+  id                  String    @id @default(cuid())
+  householdId         String
+  requestedById       String
+  createdAt           DateTime  @default(now())
+  workosInvitationId  String?
+  status              String    @default("RESERVED")
+  household           Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  requestedBy         User      @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([householdId, createdAt])
+  @@index([requestedById, createdAt])
 }
 
 model HouseholdMember {
@@ -230,18 +256,47 @@ model MealPlan {
 model MealPlanEntry {
   id               String          @id @default(cuid())
   mealPlanId       String
-  recipeId         String
+  recipeId         String?
   recipeRevisionId String?
   date             DateTime
   mealType         MealType
   servingsOverride Int?
+  note             String?
+  kind             MealEntryKind @default(RECIPE)
   mealPlan         MealPlan        @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
-  recipe           Recipe          @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipe           Recipe?         @relation(fields: [recipeId], references: [id], onDelete: Restrict)
   recipeRevision   RecipeRevision? @relation(fields: [recipeRevisionId], references: [id], onDelete: Restrict)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
-  @@unique([mealPlanId, date, mealType])
+  @@index([mealPlanId, date, mealType])
+}
+
+model MealPlanTemplate {
+  id          String                 @id @default(cuid())
+  householdId String
+  createdById String
+  name        String
+  household   Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy   User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  entries     MealPlanTemplateEntry[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  @@unique([householdId, name])
+}
+
+model MealPlanTemplateEntry {
+  id               String          @id @default(cuid())
+  templateId       String
+  dayOffset        Int
+  mealType         MealType
+  kind             MealEntryKind   @default(RECIPE)
+  recipeId         String?
+  recipeRevisionId String?
+  note             String?
+  servingsOverride Int?
+  template         MealPlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  @@index([templateId, dayOffset, mealType])
 }
 
 model ShoppingList {

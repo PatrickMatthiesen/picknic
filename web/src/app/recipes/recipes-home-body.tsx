@@ -7,10 +7,12 @@ import { AppPageShell } from "@/app/_components/page-shell";
 import { RecipeImage } from "@/app/_components/recipe-image";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
-import { ensureRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
+import { ensureRecipeRevision } from "@/lib/recipe-revisions";
+
+import { loadRecipeSearchPage } from "@/lib/recipe-search-service";
 
 type RecipesHomeBodyProps = {
-  searchParams: Promise<{ q?: string; view?: string; collection?: string }>;
+  searchParams: Promise<{ q?: string; view?: string; collection?: string; page?: string; maxMinutes?: string; diet?: string; exclude?: string }>;
   currentPath: "/recipes";
   searchActionPath: "/recipes";
 };
@@ -123,49 +125,10 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
       include: { _count: { select: { items: true } } },
       orderBy: { updatedAt: "desc" },
     }),
-    prisma.recipe.findMany({
-      where: {
-        ...(query && view === "discover" ? { title: { contains: query, mode: "insensitive" } } : {}),
-        ...(view === "discover"
-          ? { deletedAt: null, visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
-          : view === "collections"
-            ? { collectionItems: { some: { collection: { userId, ...(search.collection ? { id: search.collection } : {}) } } } }
-            : { OR: [{ householdId: membership.householdId, deletedAt: null }, { saves: { some: { userId } } }] }),
-      },
-      include: {
-        ingredients: { select: { id: true } },
-        steps: { select: { id: true } },
-        saves: { where: { userId }, select: { userId: true, lastSeenRevisionId: true } },
-        collectionItems: { where: { collection: { userId } }, select: { collectionId: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 48,
-    }),
+    loadRecipeSearchPage({ userId, householdId: membership.householdId, ...search, view, collectionId: search.collection, pageSize: 24, q: query }),
   ]);
-  const retainedRevisionIds = recipes
-    .filter((recipe) => recipe.householdId !== membership.householdId && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt))
-    .map((recipe) => recipe.latestRevisionId)
-    .filter((id): id is string => id !== null);
-  const retainedRevisions = retainedRevisionIds.length
-    ? await prisma.recipeRevision.findMany({ where: { id: { in: retainedRevisionIds } } })
-    : [];
-  const retainedSnapshots = new Map(retainedRevisions.map((revision) => [revision.id, readRecipeSnapshot(revision.snapshot)]));
-  const displayRecipes = recipes.map((recipe) => {
-    const snapshot = recipe.latestRevisionId ? retainedSnapshots.get(recipe.latestRevisionId) : null;
-    return snapshot
-      ? {
-          ...recipe,
-          ...snapshot,
-          id: recipe.id,
-          ingredients: snapshot.ingredients.map(({ id }) => ({ id })),
-          steps: snapshot.steps.map(({ id }) => ({ id })),
-        }
-      : recipe;
-  });
-  const visibleRecipes = query
-    ? displayRecipes.filter((recipe) => recipe.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-    : displayRecipes;
-  const returnTo = hrefFor({ view, q: query || undefined, collection: search.collection });
+  const visibleRecipes = recipes.items;
+  const returnTo = hrefFor({ view, q: query || undefined, collection: search.collection, page: search.page, maxMinutes: search.maxMinutes, diet: search.diet, exclude: search.exclude });
 
   return (
     <AppPageShell
@@ -183,10 +146,22 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
         <form className="recipe-search" action={searchActionPath} method="get">
           {view !== "mine" ? <input name="view" type="hidden" value={view} /> : null}
           <Search aria-hidden="true" size={17} />
-          <input defaultValue={query} name="q" placeholder="Search recipes" />
+          <input aria-label="Search titles, ingredients and tags" defaultValue={query} name="q" placeholder="Title, ingredient or tag" />
+          {search.collection ? <input name="collection" type="hidden" value={search.collection} /> : null}
+          <button type="submit">Search</button>
         </form>
       </div>
 
+      <form className="recipe-filter-bar" method="get" action={searchActionPath}>
+        <input name="view" type="hidden" value={view} /><input name="q" type="hidden" value={query} />
+        {search.collection ? <input name="collection" type="hidden" value={search.collection} /> : null}
+        <label>Ready within<select className="app-theme-input" name="maxMinutes" defaultValue={search.maxMinutes ?? ""}><option value="">Any time</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">1 hour</option></select></label>
+        <label>Dietary tag<input className="app-theme-input" name="diet" defaultValue={search.diet} placeholder="e.g. vegetarian" /></label>
+        <label>Exclude ingredients<input className="app-theme-input" name="exclude" defaultValue={search.exclude} placeholder="e.g. peanuts, shellfish" /></label>
+        <button className="app-theme-secondary-button px-4" type="submit">Apply filters</button>
+        <small>Filters match recipe labels and ingredient names. Check the recipe and packaging for dietary needs.</small>
+      </form>
+      <p className="app-theme-muted text-sm" role="status">{recipes.total} matching recipes</p>
       {view === "collections" ? (
         <section className="collection-strip">
           <form action={createCollection}>
@@ -242,6 +217,11 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
           ))}
         </section>
       )}
+      {recipes.pageCount > 1 ? <nav className="search-pagination" aria-label="Recipe pages">
+        {recipes.page > 1 ? <Link className="app-theme-secondary-button px-4 py-2" href={hrefFor({ ...search, view, page: String(recipes.page - 1) })}>Previous</Link> : null}
+        <span>Page {recipes.page} of {recipes.pageCount}</span>
+        {recipes.page < recipes.pageCount ? <Link className="app-theme-secondary-button px-4 py-2" href={hrefFor({ ...search, view, page: String(recipes.page + 1) })}>Next</Link> : null}
+      </nav> : null}
     </AppPageShell>
   );
 }

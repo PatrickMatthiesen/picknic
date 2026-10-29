@@ -1,4 +1,4 @@
-import { MealType, Prisma, RecipeVisibility } from "@prisma/client";
+import { MealEntryKind, MealType, Prisma, RecipeVisibility } from "@prisma/client";
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Plus, Search, ShoppingBasket, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
@@ -10,13 +10,14 @@ import { addUtcDays, getDateKey, getWeekStartUtc, MAX_PLANNED_SERVINGS, parseDat
 import { prisma } from "@/lib/prisma";
 import { formatMealType } from "@/lib/recipe-display";
 import { ensureRecipeRevision, getPlanningRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
+import { loadRecipeSearchPage } from "@/lib/recipe-search-service";
 
-const OPTIONAL_MEAL_TYPES = [MealType.BREAKFAST, MealType.BRUNCH, MealType.LUNCH, MealType.SNACK, MealType.OTHER];
+const OPTIONAL_MEAL_TYPES = [MealType.DINNER, MealType.BREAKFAST, MealType.BRUNCH, MealType.LUNCH, MealType.SNACK, MealType.OTHER];
 const RECIPE_VIEWS = ["all", "saved", "collections", "discover"] as const;
 type RecipeView = (typeof RECIPE_VIEWS)[number];
 
 type PageProps = {
-  searchParams: Promise<{ week?: string; day?: string; meal?: string; view?: string; q?: string }>;
+  searchParams: Promise<{ week?: string; day?: string; meal?: string; view?: string; q?: string; page?: string; maxMinutes?: string; diet?: string; exclude?: string }>;
 };
 
 function queryString(values: Record<string, string | undefined>) {
@@ -102,14 +103,32 @@ export default async function PlannerPage({ searchParams }: PageProps) {
       create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart: activeWeekStart },
       select: { id: true },
     });
-    await prisma.mealPlanEntry.upsert({
-      where: { mealPlanId_date_mealType: { mealPlanId: plan.id, date: toUtcDate(date), mealType } },
-      update: { recipeId, recipeRevisionId: revision.id },
-      create: { mealPlanId: plan.id, recipeId, recipeRevisionId: revision.id, date: toUtcDate(date), mealType },
+    await prisma.mealPlanEntry.create({
+      data: { mealPlanId: plan.id, recipeId, recipeRevisionId: revision.id, date: toUtcDate(date), mealType },
     });
     revalidatePath("/planner");
     revalidatePath("/shopping-list");
     redirect(returnTo);
+  }
+
+  async function addNote(formData: FormData) {
+    "use server";
+    const date = parseDateKey(String(formData.get("date") ?? ""));
+    const rawNote = String(formData.get("note") ?? "").trim();
+    const kind = String(formData.get("kind") ?? "NOTE") as Exclude<MealEntryKind, "RECIPE">;
+    const note = rawNote || ({ LEFTOVERS: "Leftovers", EATING_OUT: "Eating out", NO_PLAN: "Leave open", NOTE: "Meal note" }[kind] ?? "Meal note");
+    if (!date || !Object.values(MealEntryKind).filter((value) => value !== MealEntryKind.RECIPE).includes(kind)) throw new Error("Choose a plan type and add a short note.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    const weekStart = getWeekStartUtc(date);
+    const plan = await prisma.mealPlan.upsert({
+      where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart } },
+      update: {}, create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart },
+    });
+    await prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: toUtcDate(date), mealType: MealType.DINNER, kind, note } });
+    revalidatePath("/planner");
+    revalidatePath("/shopping-list");
   }
 
   async function updateServings(formData: FormData) {
@@ -127,6 +146,70 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     revalidatePath("/planner");
     revalidatePath("/shopping-list");
     revalidatePath("/cook");
+  }
+
+  async function copyPreviousWeek(formData: FormData) {
+    "use server";
+    const targetWeek = parseDateKey(String(formData.get("week") ?? ""));
+    if (!targetWeek) throw new Error("Choose a valid week.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    const sourceWeek = addUtcDays(getWeekStartUtc(targetWeek), -7);
+    const source = await prisma.mealPlan.findUnique({ where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart: sourceWeek } }, include: { entries: true } });
+    if (!source?.entries.length) throw new Error("There are no meals to copy from the previous week.");
+    const target = await prisma.mealPlan.upsert({ where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart: getWeekStartUtc(targetWeek) } }, update: {}, create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart: getWeekStartUtc(targetWeek) } });
+    await prisma.mealPlanEntry.createMany({ data: source.entries.map(entry => ({ mealPlanId: target.id, recipeId: entry.recipeId, recipeRevisionId: entry.recipeRevisionId, date: addUtcDays(entry.date, 7), mealType: entry.mealType, servingsOverride: entry.servingsOverride, kind: entry.kind, note: entry.note })) });
+    revalidatePath("/planner");
+    revalidatePath("/shopping-list");
+  }
+
+  async function moveEntry(formData: FormData) {
+    "use server";
+    const entryId = String(formData.get("entryId") ?? "");
+    const date = parseDateKey(String(formData.get("date") ?? ""));
+    if (!entryId || !date) throw new Error("Choose a valid date.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    const weekStart = getWeekStartUtc(date);
+    const target = await prisma.mealPlan.upsert({ where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart } }, update: {}, create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart } });
+    await prisma.mealPlanEntry.updateMany({ where: { id: entryId, mealPlan: { householdId: activeMembership.householdId } }, data: { mealPlanId: target.id, date: toUtcDate(date) } });
+    revalidatePath("/planner");
+    revalidatePath("/shopping-list");
+    revalidatePath("/cook");
+    redirect(`/planner?week=${getDateKey(weekStart)}&day=${getDateKey(date)}`);
+  }
+
+  async function saveTemplate(formData: FormData) {
+    "use server";
+    const name = String(formData.get("name") ?? "").trim();
+    const templateWeek = parseDateKey(String(formData.get("week") ?? ""));
+    if (!name || !templateWeek) throw new Error("Enter a name for this weekly plan.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    const plan = await prisma.mealPlan.findUnique({ where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart: getWeekStartUtc(templateWeek) } }, include: { entries: true } });
+    if (!plan?.entries.length) throw new Error("Add meals before saving a weekly plan.");
+    await prisma.mealPlanTemplate.create({ data: { householdId: activeMembership.householdId, createdById: context.userId, name, entries: { create: plan.entries.map(entry => ({ dayOffset: Math.round((entry.date.getTime() - getWeekStartUtc(templateWeek).getTime()) / 86400000), mealType: entry.mealType, kind: entry.kind, note: entry.note, recipeId: entry.recipeId, recipeRevisionId: entry.recipeRevisionId, servingsOverride: entry.servingsOverride })) } } });
+    revalidatePath("/planner");
+  }
+
+  async function applyTemplate(formData: FormData) {
+    "use server";
+    const templateId = String(formData.get("templateId") ?? "");
+    const targetWeek = parseDateKey(String(formData.get("week") ?? ""));
+    if (!templateId || !targetWeek) throw new Error("Choose a saved weekly plan.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    const template = await prisma.mealPlanTemplate.findFirst({ where: { id: templateId, householdId: activeMembership.householdId }, include: { entries: true } });
+    if (!template) throw new Error("Saved weekly plan was not found.");
+    const weekStart = getWeekStartUtc(targetWeek);
+    const target = await prisma.mealPlan.upsert({ where: { householdId_weekStart: { householdId: activeMembership.householdId, weekStart } }, update: {}, create: { householdId: activeMembership.householdId, createdById: context.userId, weekStart } });
+    await prisma.mealPlanEntry.createMany({ data: template.entries.map(entry => ({ mealPlanId: target.id, date: addUtcDays(weekStart, entry.dayOffset), mealType: entry.mealType, kind: entry.kind, note: entry.note, recipeId: entry.recipeId, recipeRevisionId: entry.recipeRevisionId, servingsOverride: entry.servingsOverride })) });
+    revalidatePath("/planner");
+    revalidatePath("/shopping-list");
   }
 
   function servingsControl(entry: { id: string; servingsOverride: number | null }, recipe: { servings: number; title: string }) {
@@ -173,44 +256,20 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     redirect(returnTo);
   }
 
-  const [mealPlan, recipes] = await Promise.all([
+  const maxMinutes = search.maxMinutes;
+  const diet = search.diet;
+  const exclude = search.exclude;
+  const [mealPlan, recipePage, templates] = await Promise.all([
     prisma.mealPlan.findUnique({
       where: { householdId_weekStart: { householdId: membership.householdId, weekStart } },
       include: { entries: { orderBy: [{ date: "asc" }, { mealType: "asc" }], include: { recipe: true, recipeRevision: true } } },
     }),
-    prisma.recipe.findMany({
-      where: {
-        ...(query && (view === "all" || view === "discover") ? { title: { contains: query, mode: "insensitive" } } : {}),
-        ...(view === "saved" ? { saves: { some: { userId } } } : {}),
-        ...(view === "collections" ? { collectionItems: { some: { collection: { userId } } } } : {}),
-        ...(view === "discover"
-          ? { deletedAt: null, visibility: RecipeVisibility.PUBLIC, NOT: { householdId: membership.householdId } }
-          : view === "all"
-            ? { deletedAt: null, OR: [{ householdId: membership.householdId }, { visibility: RecipeVisibility.PUBLIC }] }
-            : {}),
-      },
-      include: { saves: { where: { userId }, select: { userId: true, lastSeenRevisionId: true } } },
-      orderBy: [{ updatedAt: "desc" }],
-      take: 18,
-    }),
+    loadRecipeSearchPage({ userId, householdId: membership.householdId, view, q: query, maxMinutes, diet, exclude, page: search.page, pageSize: 18 }),
+    prisma.mealPlanTemplate.findMany({ where: { householdId: membership.householdId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
-  const returnTo = `/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined })}`;
-  const retainedRevisionIds = recipes
-    .filter((recipe) => recipe.householdId !== membership.householdId && (recipe.visibility !== RecipeVisibility.PUBLIC || recipe.deletedAt))
-    .map((recipe) => recipe.latestRevisionId)
-    .filter((id): id is string => id !== null);
-  const retainedRevisions = retainedRevisionIds.length
-    ? await prisma.recipeRevision.findMany({ where: { id: { in: retainedRevisionIds } } })
-    : [];
-  const retainedSnapshots = new Map(retainedRevisions.map((revision) => [revision.id, readRecipeSnapshot(revision.snapshot)]));
-  const displayRecipes = recipes.map((recipe) => {
-    const snapshot = recipe.latestRevisionId ? retainedSnapshots.get(recipe.latestRevisionId) : null;
-    return snapshot ? { ...recipe, ...snapshot, id: recipe.id } : recipe;
-  });
-  const visibleRecipes = query
-    ? displayRecipes.filter((recipe) => recipe.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-    : displayRecipes;
+  const returnTo = `/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined, maxMinutes, diet, exclude })}`;
+  const visibleRecipes = recipePage.items;
   const entriesByDay = new Map<string, NonNullable<typeof mealPlan>["entries"]>();
   for (const entry of mealPlan?.entries ?? []) {
     const key = getDateKey(entry.date);
@@ -230,6 +289,8 @@ export default async function PlannerPage({ searchParams }: PageProps) {
           <Link className="today-link" href="/planner"><CalendarDays size={17} /> Today</Link>
           <Link aria-label="Next week" href={`/planner?week=${nextWeek}`}><ChevronRight size={18} /></Link>
           <Link className="today-link" href={`/shopping-list?week=${weekKey}`}><ShoppingBasket size={17} /> Shop this week</Link>
+          <form action={copyPreviousWeek}><input name="week" type="hidden" value={weekKey} /><button className="today-link" type="submit">Copy last week</button></form>
+          <details className="weekly-plan-menu"><summary>Weekly plans</summary><form action={saveTemplate}><input name="week" type="hidden" value={weekKey} /><input aria-label="Weekly plan name" name="name" placeholder="Name this week" required /><button type="submit">Save</button></form><form action={applyTemplate}><input name="week" type="hidden" value={weekKey} /><select aria-label="Saved weekly plan" name="templateId" required><option value="">Choose saved plan</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><button type="submit">Append plan</button></form></details>
         </div>
       }
     >
@@ -237,9 +298,9 @@ export default async function PlannerPage({ searchParams }: PageProps) {
         {days.map((day) => {
           const dateKey = getDateKey(day);
           const entries = entriesByDay.get(dateKey) ?? [];
-          const dinner = entries.find((entry) => entry.mealType === MealType.DINNER);
-          const extras = entries.filter((entry) => entry.mealType !== MealType.DINNER);
-          const dinnerRecipe = dinner ? getPlannedRecipe(dinner) : null;
+          const dinner = entries.find((entry) => entry.mealType === MealType.DINNER && entry.recipeId) ?? entries.find((entry) => entry.mealType === MealType.DINNER);
+          const extras = entries.filter((entry) => entry.id !== dinner?.id);
+          const dinnerRecipe = dinner?.recipe ? getPlannedRecipe({ ...dinner, recipe: dinner.recipe }) : null;
           const isToday = dateKey === todayKey;
           const isSelected = dateKey === selectedDayKey;
 
@@ -255,14 +316,17 @@ export default async function PlannerPage({ searchParams }: PageProps) {
                   <div className="planned-meal">
                     <RecipeImage alt="" height={112} loading="eager" recipe={dinnerRecipe} width={168} />
                     <span className="planned-badge">Planned</span>
-                    <Link href={`/recipes/${dinner.recipe.id}`}>{dinnerRecipe.title}</Link>
-                    {servingsControl(dinner, dinnerRecipe)}
+                    {dinner.recipe ? <Link href={`/recipes/${dinner.recipe.id}`}>{dinnerRecipe.title}</Link> : <span>{dinner.note ?? "No plan"}</span>}
+                    {dinner.recipe ? servingsControl(dinner, dinnerRecipe) : null}
+                    <details className="reschedule-meal"><summary>Reschedule</summary><form action={moveEntry} className="planned-servings"><input name="entryId" type="hidden" value={dinner.id} /><label>Move to<input aria-label={`Move ${dinnerRecipe.title} to date`} name="date" type="date" required /></label><button type="submit">Move</button></form></details>
                     <form action={removeEntry} className="remove-planned-meal">
                       <input name="entryId" type="hidden" value={dinner.id} />
                       <input name="returnTo" type="hidden" value={returnTo} />
                       <button aria-label={`Remove ${dinnerRecipe.title} from ${dateKey}`} type="submit"><Trash2 size={15} /></button>
                     </form>
                   </div>
+                ) : dinner ? (
+                  <div className="planned-meal planned-note"><span className="meal-label">{dinner.kind === MealEntryKind.NO_PLAN ? "Open day" : dinner.kind === MealEntryKind.EATING_OUT ? "Eating out" : dinner.kind === MealEntryKind.LEFTOVERS ? "Leftovers" : "Note"}</span><span>{dinner.note}</span><details className="reschedule-meal"><summary>Reschedule</summary><form action={moveEntry} className="planned-servings"><input name="entryId" type="hidden" value={dinner.id} /><label>Move to<input aria-label={`Move meal note for ${dateKey}`} name="date" type="date" required /></label><button type="submit">Move</button></form></details><form action={removeEntry} className="remove-planned-meal"><input name="entryId" type="hidden" value={dinner.id} /><input name="returnTo" type="hidden" value={returnTo} /><button aria-label="Remove meal note" type="submit"><Trash2 size={15} /></button></form></div>
                 ) : (
                   <Link className="empty-meal" href={`/planner?${queryString({ week: weekKey, day: dateKey, meal: MealType.DINNER, view })}`}>
                     <Plus size={18} />
@@ -274,15 +338,16 @@ export default async function PlannerPage({ searchParams }: PageProps) {
               {extras.length > 0 ? (
                 <div className="extra-meals">
                   {extras.map((entry) => {
-                    const plannedRecipe = getPlannedRecipe(entry);
+                    const plannedRecipe = entry.recipe ? getPlannedRecipe({ ...entry, recipe: entry.recipe }) : null;
                     return <div key={entry.id}>
                       <span>{formatMealType(entry.mealType)}</span>
-                      <Link href={`/recipes/${entry.recipe.id}`}>{plannedRecipe.title}</Link>
-                      {servingsControl(entry, plannedRecipe)}
+                      {plannedRecipe && entry.recipe ? <Link href={`/recipes/${entry.recipe.id}`}>{plannedRecipe.title}</Link> : <span>{entry.note ?? "No plan"}</span>}
+                      {plannedRecipe ? servingsControl(entry, plannedRecipe) : null}
+                      {<details className="reschedule-meal"><summary>Reschedule</summary><form action={moveEntry} className="planned-servings"><input name="entryId" type="hidden" value={entry.id} /><label>Move to<input aria-label={`Move ${plannedRecipe?.title ?? entry.note ?? "meal"} to date`} name="date" type="date" required /></label><button type="submit">Move</button></form></details>}
                       <form action={removeEntry} className="remove-planned-meal">
                         <input name="entryId" type="hidden" value={entry.id} />
                         <input name="returnTo" type="hidden" value={returnTo} />
-                        <button aria-label={`Remove ${plannedRecipe.title}`} type="submit"><Trash2 size={14} /></button>
+                        <button aria-label={`Remove ${plannedRecipe?.title ?? entry.note ?? "meal"}`} type="submit"><Trash2 size={14} /></button>
                       </form>
                     </div>;
                   })}
@@ -291,11 +356,17 @@ export default async function PlannerPage({ searchParams }: PageProps) {
               <details className="add-meal-menu">
                 <summary><Plus size={15} /> Add another meal</summary>
                 <div>
-                  {OPTIONAL_MEAL_TYPES.filter((type) => !entries.some((entry) => entry.mealType === type)).map((type) => (
+                  {OPTIONAL_MEAL_TYPES.map((type) => (
                     <Link href={`/planner?${queryString({ week: weekKey, day: dateKey, meal: type, view })}`} key={type}>{formatMealType(type)}</Link>
                   ))}
                 </div>
               </details>
+              <details className="meal-note-editor"><summary>Leftovers, eating out or note</summary><form action={addNote}>
+                <input name="date" type="hidden" value={dateKey} />
+                <select aria-label="Plan type" name="kind" defaultValue="LEFTOVERS"><option value="LEFTOVERS">Leftovers</option><option value="EATING_OUT">Eating out</option><option value="NOTE">Other note</option><option value="NO_PLAN">Leave open</option></select>
+                <input aria-label={`Meal note for ${dateKey}`} name="note" placeholder="Note (optional)" />
+                <button type="submit">Add</button>
+              </form></details>
             </article>
           );
         })}
@@ -307,18 +378,21 @@ export default async function PlannerPage({ searchParams }: PageProps) {
             <p className="app-theme-muted text-xs">Planning {formatMealType(selectedMealType).toLowerCase()} for {selectedDay.toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" })}</p>
             <h2 id="recipe-tray-title">Find a recipe</h2>
           </div>
-          <form className="recipe-search" method="get">
+          <form className="recipe-search planner-search" method="get">
             <input name="week" type="hidden" value={weekKey} />
             <input name="day" type="hidden" value={selectedDayKey} />
             <input name="meal" type="hidden" value={selectedMealType} />
             <input name="view" type="hidden" value={view} />
             <Search aria-hidden="true" size={17} />
-            <input defaultValue={query} name="q" placeholder="Search recipes" />
+            <input defaultValue={query} name="q" placeholder="Title, ingredient or tag" aria-label="Search recipes, ingredients and tags" />
+            <input aria-label="Maximum cooking time in minutes" defaultValue={maxMinutes} name="maxMinutes" placeholder="Max min" type="number" min={1} />
+            <input aria-label="Diet tag" defaultValue={diet} name="diet" placeholder="Diet tag" />
+            <input aria-label="Exclude ingredients" defaultValue={exclude} name="exclude" placeholder="Exclude ingredients" /><button type="submit">Search</button>
           </form>
         </div>
         <nav className="recipe-tabs" aria-label="Recipe source">
           {RECIPE_VIEWS.map((item) => (
-            <Link className={item === view ? "is-active" : undefined} href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view: item, q: query || undefined })}`} key={item}>
+            <Link className={item === view ? "is-active" : undefined} href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view: item, q: query || undefined, maxMinutes, diet, exclude })}`} key={item}>
               {item === "all" ? "All recipes" : item.charAt(0).toUpperCase() + item.slice(1)}
             </Link>
           ))}
@@ -360,6 +434,11 @@ export default async function PlannerPage({ searchParams }: PageProps) {
             ))}
           </div>
         )}
+        {recipePage.pageCount > 1 ? <nav aria-label="Recipe result pages" className="recipe-tabs">
+          {recipePage.page > 1 ? <Link href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined, maxMinutes, diet, exclude, page: String(recipePage.page - 1) })}`}>Previous recipes</Link> : null}
+          <span>Page {recipePage.page} of {recipePage.pageCount} · {recipePage.total} recipes</span>
+          {recipePage.page < recipePage.pageCount ? <Link href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined, maxMinutes, diet, exclude, page: String(recipePage.page + 1) })}`}>More recipes</Link> : null}
+        </nav> : null}
       </section>
     </AppPageShell>
   );

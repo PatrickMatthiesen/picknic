@@ -8,6 +8,8 @@ const userUpsert = mock();
 const householdUpsert = mock();
 const householdMemberUpsert = mock();
 const householdMemberFindFirst = mock();
+const householdMemberDeleteMany = mock();
+const listOrganizationMemberships = mock();
 
 const prisma = {
   user: { findUnique: userFindUnique, update: userUpdate, upsert: userUpsert },
@@ -15,13 +17,14 @@ const prisma = {
   householdMember: {
     upsert: householdMemberUpsert,
     findFirst: householdMemberFindFirst,
+    deleteMany: householdMemberDeleteMany,
   },
 };
 
-mock.module("@workos-inc/authkit-nextjs", () => ({ withAuth }));
+mock.module("@workos-inc/authkit-nextjs", () => ({ withAuth, getWorkOS: () => ({ userManagement: { listOrganizationMemberships } }) }));
 mock.module("@/lib/prisma", () => ({ prisma }));
 
-const { ensureLinkedProfile, requireAppAuthContext } = await import("@/lib/auth-context");
+const { ensureLinkedProfile, requireAppAuthContext, resolveActiveMembership, resolveActiveHouseholdId } = await import("@/lib/auth-context");
 
 describe("WorkOS profile linking", () => {
   beforeEach(() => {
@@ -33,6 +36,39 @@ describe("WorkOS profile linking", () => {
     householdUpsert.mockReset();
     householdMemberUpsert.mockReset();
     householdMemberFindFirst.mockReset();
+    householdMemberDeleteMany.mockReset();
+    listOrganizationMemberships.mockReset();
+    listOrganizationMemberships.mockImplementation(async options => ({ data: [{ organizationId: options.organizationId, userId: options.userId, status: "active" }] }));
+  });
+
+  test("removed provider memberships cannot be restored by a retained session or a stale local row", async () => {
+    const sessionUser = { id: "removed_workos", email: "removed@example.com" };
+    withAuth.mockResolvedValue({ user: sessionUser, organizationId: "org_workos" });
+    userUpsert.mockResolvedValue({ id: "removed_database" });
+    householdUpsert.mockResolvedValue({ id: "shared_household", ownerId: "owner" });
+    let localMembership: { householdId: string; role: MembershipRole } | null = null;
+    householdMemberUpsert.mockImplementation(async () => { localMembership = { householdId: "shared_household", role: MembershipRole.MEMBER }; });
+    householdMemberDeleteMany.mockImplementation(async () => { localMembership = null; });
+    householdMemberFindFirst.mockImplementation(async () => localMembership);
+    await requireAppAuthContext();
+    expect(await resolveActiveMembership("removed_database", "org_workos")).not.toBeNull();
+    // Keep the old organization claim and local row to simulate a stale session
+    // or a profile upsert that raced the owner removing the provider membership.
+    listOrganizationMemberships.mockResolvedValue({ data: [] });
+    await requireAppAuthContext();
+    expect(householdMemberUpsert).toHaveBeenCalledTimes(1);
+    expect(householdMemberDeleteMany).toHaveBeenCalledWith({ where: { userId: "removed_database", household: { workosOrganizationId: "org_workos" } } });
+    expect(await resolveActiveMembership("removed_database", "org_workos")).toBeNull();
+    expect(await resolveActiveHouseholdId("removed_database", "org_workos")).toBeNull();
+    expect(householdMemberFindFirst.mock.calls.at(-1)?.[0].where.household).toEqual({ workosOrganizationId: "org_workos" });
+  });
+
+  test("provider failures fail closed before organization household access is provisioned", async () => {
+    userUpsert.mockResolvedValue({ id: "member_database" });
+    listOrganizationMemberships.mockRejectedValue(new Error("Provider unavailable"));
+    await expect(ensureLinkedProfile({ id: "member_workos", email: "member@example.com" }, "org_workos")).rejects.toThrow("Provider unavailable");
+    expect(householdUpsert).not.toHaveBeenCalled();
+    expect(householdMemberUpsert).not.toHaveBeenCalled();
   });
 
   test("requireAppAuthContext authenticates with WorkOS and returns the linked organization context", async () => {

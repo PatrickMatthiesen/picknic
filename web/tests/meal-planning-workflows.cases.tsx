@@ -5,13 +5,15 @@ import { isValidElement, type ReactNode } from "react";
 // Run in a separate Bun process: module mocks must not replace the real auth
 // helpers used by the profile-linking tests in the main test suite.
 const prisma = {
+  $queryRaw: mock(async () => []),
   recipe: { findMany: mock(), findUniqueOrThrow: mock() },
-  recipeRevision: { findFirst: mock(), findUnique: mock(), create: mock() },
+  recipeRevision: { findFirst: mock(), findUnique: mock(), findMany: mock(), create: mock() },
   mealPlan: { findUnique: mock(), upsert: mock() },
-  mealPlanEntry: { upsert: mock(), updateMany: mock() },
+  mealPlanEntry: { create: mock(), updateMany: mock() },
+  mealPlanTemplate: { findMany: mock() },
   pantryItem: { findFirst: mock(), findMany: mock(), update: mock() },
-  shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock() },
-  shoppingListItem: { findMany: mock(), create: mock(), update: mock(), updateMany: mock(), deleteMany: mock() },
+  shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock(), create: mock() },
+  shoppingListItem: { findFirst: mock(), findMany: mock(), create: mock(), update: mock(), updateMany: mock(), deleteMany: mock() },
   $transaction: mock(async (operation: unknown) => typeof operation === "function"
     ? operation(prisma)
     : Promise.all(operation as Promise<unknown>[])),
@@ -44,6 +46,7 @@ beforeEach(() => {
   revalidatePath.mockClear();
   prisma.mealPlan.upsert.mockResolvedValue({ id: "plan" });
   prisma.mealPlan.findUnique.mockResolvedValue(null);
+  prisma.shoppingList.create.mockResolvedValue({ id: "future-list" });
 });
 
 function request(path: string, body: unknown, method = "POST") {
@@ -60,6 +63,20 @@ const planRequest = () => request("/api/meal-plans", {
 });
 
 describe("planning shared recipes", () => {
+  test("creates additive entries so multiple dishes in one slot remain assigned", async () => {
+    const ownedRecipes = ["dish-one", "dish-two", "dish-three"].map((id) => ({ id, householdId: "reader-household", createdById: "reader", latestRevisionId: null }));
+    prisma.recipe.findMany.mockImplementation(async ({ where }) => ownedRecipes.filter((recipe) => where.id.in.includes(recipe.id)));
+    prisma.recipe.findUniqueOrThrow.mockImplementation(async ({ where }) => ({ ...ownedRecipes.find((recipe) => recipe.id === where.id), createdBy: { displayName: "Reader" }, title: where.id, servings: 2, visibility: "PRIVATE", ingredients: [], steps: [] }));
+    prisma.recipeRevision.findFirst.mockResolvedValue({ version: 1 });
+    prisma.recipeRevision.create.mockImplementation(async ({ data }) => ({ id: `revision-${data.recipeId}` }));
+    const makeRequest = (ids: string[]) => request("/api/meal-plans", { weekStart: "2030-04-01", entries: ids.map((recipeId) => ({ date: "2030-04-03", mealType: "DINNER", recipeId })) });
+    expect((await planMeals(makeRequest(["dish-one", "dish-two"]))).status).toBe(201);
+    expect((await planMeals(makeRequest(["dish-three"]))).status).toBe(201);
+    expect(prisma.mealPlanEntry.create).toHaveBeenCalledTimes(3);
+    expect(prisma.mealPlanEntry.create.mock.calls.map(([call]) => call.data.recipeId)).toEqual(["dish-one", "dish-two", "dish-three"]);
+    expect(prisma.mealPlanEntry.updateMany).not.toHaveBeenCalled();
+  });
+
   test.each([
     ["unpublished", "PRIVATE", null],
     ["public", "PUBLIC", null],
@@ -73,7 +90,7 @@ describe("planning shared recipes", () => {
       saves: { some: { userId: "reader" } }, latestRevisionId: { not: null },
     });
     expect(prisma.recipeRevision.findFirst).toHaveBeenCalledWith({ where: { id: "published-revision", recipeId: sharedRecipe.id } });
-    expect(prisma.mealPlanEntry.upsert.mock.calls[0][0].create.recipeRevisionId).toBe("published-revision");
+    expect(prisma.mealPlanEntry.create.mock.calls[0][0].data.recipeRevisionId).toBe("published-revision");
     expect(prisma.recipe.findUniqueOrThrow).not.toHaveBeenCalled();
     expect(prisma.recipeRevision.create).not.toHaveBeenCalled();
   });
@@ -93,7 +110,7 @@ describe("planning shared recipes", () => {
     prisma.recipe.findMany.mockResolvedValue([{ ...sharedRecipe, latestRevisionId: null }]);
     expect((await planMeals(planRequest())).status).toBe(400);
     expect(prisma.recipe.findUniqueOrThrow).not.toHaveBeenCalled();
-    expect(prisma.mealPlanEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.mealPlanEntry.create).not.toHaveBeenCalled();
   });
 
   test("still snapshots the household's own private recipe", async () => {
@@ -103,7 +120,7 @@ describe("planning shared recipes", () => {
     prisma.recipeRevision.findFirst.mockResolvedValue({ version: 1 });
     prisma.recipeRevision.create.mockResolvedValue({ id: "own-private-revision" });
     expect((await planMeals(planRequest())).status).toBe(201);
-    expect(prisma.mealPlanEntry.upsert.mock.calls[0][0].create.recipeRevisionId).toBe("own-private-revision");
+    expect(prisma.mealPlanEntry.create.mock.calls[0][0].data.recipeRevisionId).toBe("own-private-revision");
   });
 
   test("rejects recipes outside the access query without writing a plan", async () => {
@@ -163,10 +180,10 @@ describe("pantry unit integrity", () => {
   });
 });
 
-type Item = { id: string; ingredientName: string; quantity: number; unit: string; unitId: string | null; source: "AUTO" | "MANUAL"; status: "BOUGHT" | "PENDING" | "SKIPPED" };
+type Item = { id: string; ingredientName: string; quantity: number | null; unit: string; unitId: string | null; source: "AUTO" | "MANUAL"; status: "BOUGHT" | "PENDING" | "SKIPPED" };
 const entryFields = { id: "entry", recipeId: "recipe", recipeRevisionId: null, date: new Date("2030-04-03"), mealType: "DINNER" };
 let items: Item[];
-let ingredients: Array<{ name: string; quantity: number; unit: string; unitId?: string }>;
+let ingredients: Array<{ name: string; quantity: number | null; unit: string; unitId?: string }>;
 function generateList() {
   return generateShoppingListForWeek({ householdId: "reader-household", userId: "reader", weekStart: new Date("2030-04-01") });
 }
@@ -216,18 +233,53 @@ describe("shopping list refresh", () => {
     expect(items).toEqual(first);
   });
 
+  test("repeated refreshes preserve one unknown-quantity item and its bought state", async () => {
+    ingredients = [{ name: "Rice", quantity: 100, unit: "g" }, { name: "Rice", quantity: null, unit: "g" }];
+    await generateList();
+    expect(items.filter(item => item.source === "AUTO")).toEqual([
+      { id: "rice", ingredientName: "Rice", quantity: null, unit: "g", unitId: "metric-gram", source: "AUTO", status: "BOUGHT" },
+    ]);
+    const first = structuredClone(items);
+    await generateList();
+    expect(items).toEqual(first);
+  });
+
   test("an empty plan removes generated items and preserves manual additions", async () => {
     ingredients = [];
     await generateList();
     expect(items.map((item) => item.id)).toEqual(["manual"]);
   });
 
-  test("does not transfer checked status across incompatible cup systems", async () => {
-    items = [{ id: "us-flour", ingredientName: "Flour", quantity: 1, unit: "cup", unitId: "us-cup", source: "AUTO", status: "BOUGHT" }];
+  test("does not assume conversion for ambiguous legacy cups", async () => {
+    items = [{ id: "legacy-flour", ingredientName: "Flour", quantity: 1, unit: "cup", unitId: null, source: "AUTO", status: "BOUGHT" }];
     ingredients = [{ name: "Flour", quantity: 1, unit: "cup", unitId: "metric-cup" }];
     await generateList();
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ unitId: "metric-cup", status: "PENDING" });
+  });
+
+  test("display-unit changes preserve item identity and bought or skipped progress", async () => {
+    items = [];
+    ingredients = [{ name: "Flour", quantity: 500, unit: "g" }, { name: "Flour", quantity: 1, unit: "kg" }];
+    await generateList();
+    const originalId = items[0]!.id;
+    items[0]!.status = "BOUGHT";
+    ingredients = [{ name: "Flour", quantity: 1, unit: "kg" }];
+    await generateList();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: originalId, quantity: 1, unitId: "metric-kilogram", status: "BOUGHT" });
+    items[0]!.status = "SKIPPED";
+    ingredients = [{ name: "Flour", quantity: 500, unit: "g" }];
+    await generateList();
+    expect(items[0]).toMatchObject({ id: originalId, quantity: 500, unitId: "metric-gram", status: "SKIPPED" });
+  });
+
+  test("explicit cup systems convert while retaining progress", async () => {
+    items = [{ id: "us-flour", ingredientName: "Flour", quantity: 1, unit: "cup", unitId: "us-cup", source: "AUTO", status: "BOUGHT" }];
+    ingredients = [{ name: "Flour", quantity: 1, unit: "cup", unitId: "metric-cup" }];
+    await generateList();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: "us-flour", quantity: 1, unitId: "metric-cup", status: "BOUGHT" });
   });
 
   test("uses pinned ingredients instead of private live edits", async () => {
@@ -257,6 +309,23 @@ describe("selected shopping week", () => {
     prisma.pantryItem.findMany.mockResolvedValue([]);
   });
 
+  test("shopping edits preserve stored units and check household ownership before updating", async () => {
+    prisma.shoppingList.findFirst.mockResolvedValue({ id: "future-list", items: [{ id: "milk", ingredientName: "Milk", quantity: 1, unit: "cup", unitId: "us-cup", status: "PENDING", source: "MANUAL" }] });
+    prisma.shoppingListItem.findFirst.mockResolvedValue({ unitId: "us-cup" });
+    const page = await ShoppingListPage({ searchParams: Promise.resolve({ list: "standalone" }) });
+    const form = elements(page).find(element => element.props.className === "shopping-edit-row")!;
+    const action = form.props.action as (data: FormData) => Promise<void>;
+    const data = new FormData();
+    data.set("itemId", "milk"); data.set("ingredientName", "Whole milk"); data.set("quantity", "2"); data.set("unit", "cups");
+    await expect(action(data)).rejects.toThrow("NEXT_REDIRECT");
+    expect(prisma.shoppingListItem.findFirst.mock.calls[0][0].where).toEqual({ id: "milk", shoppingList: { householdId: "reader-household" } });
+    expect(prisma.shoppingListItem.updateMany.mock.calls[0][0].data).toMatchObject({ quantity: 2, unit: "cup", unitId: "us-cup" });
+    prisma.shoppingListItem.updateMany.mockClear();
+    prisma.shoppingListItem.findFirst.mockResolvedValue(null);
+    await expect(action(data)).rejects.toThrow("Shopping item not found");
+    expect(prisma.shoppingListItem.updateMany).not.toHaveBeenCalled();
+  });
+
   test("reads the selected week and links to adjacent weeks and its meal plan", async () => {
     const page = await ShoppingListPage({ searchParams: Promise.resolve({ week: "2030-04-03" }) });
     expect(prisma.mealPlan.findUnique.mock.calls[0][0].where.householdId_weekStart.weekStart).toEqual(new Date("2030-04-01"));
@@ -268,15 +337,28 @@ describe("selected shopping week", () => {
 
   test("regenerates and adds manual items to the selected week", async () => {
     const page = await ShoppingListPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
-    await formAction(page, 0)(new FormData());
     const data = new FormData();
     data.set("ingredientName", "Bread");
-    await formAction(page, 1)(data);
+    await expect(formAction(page, 0)(data)).rejects.toThrow("NEXT_REDIRECT");
+    await expect(formAction(page, 1)(new FormData())).rejects.toThrow("NEXT_REDIRECT");
     for (const [query] of prisma.mealPlan.findUnique.mock.calls) {
       expect(query.where.householdId_weekStart.weekStart).toEqual(new Date("2030-04-01"));
     }
-    expect(prisma.shoppingList.upsert.mock.calls[1][0].create.name).toBe("Week of 2030-04-01");
+    expect(prisma.shoppingList.upsert.mock.calls[0][0].create.name).toBe("Week of 2030-04-01");
     expect(prisma.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({ shoppingListId: "future-list", source: "MANUAL", ingredientName: "Bread" });
+  });
+
+  test("adding before a weekly plan exists explicitly opens standalone shopping", async () => {
+    prisma.mealPlan.findUnique.mockResolvedValue(null);
+    prisma.shoppingList.findFirst.mockResolvedValue({ id: "standalone", items: [] });
+    expect(await getShoppingListForWeek("reader-household", new Date("2030-04-01"))).toBeNull();
+    const page = await ShoppingListPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
+    const form = elements(page).find(element => element.props.className === "shopping-add-row")!;
+    const data = new FormData(); data.set("ingredientName", "Bread"); data.set("quantity", "1");
+    let redirectError: unknown;
+    try { await (form.props.action as (data: FormData) => Promise<void>)(data); } catch (error) { redirectError = error; }
+    expect(redirectError).toMatchObject({ digest: expect.stringContaining("/shopping-list?list=standalone&saved=added") });
+    expect(prisma.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({ shoppingListId: "standalone", ingredientName: "Bread", source: "MANUAL" });
   });
 
   test("falls back to the current week for an invalid selection", async () => {
@@ -288,6 +370,8 @@ describe("selected shopping week", () => {
   test("planner links shopping to the week currently being planned", async () => {
     prisma.mealPlan.findUnique.mockResolvedValue(null);
     prisma.recipe.findMany.mockResolvedValue([]);
+    prisma.recipeRevision.findMany.mockResolvedValue([]);
+    prisma.mealPlanTemplate.findMany.mockResolvedValue([]);
     const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
     expect(elements(page).map((element) => element.props.href)).toContain("/shopping-list?week=2030-04-01");
   });
@@ -312,6 +396,8 @@ describe("shopping list freshness and planned servings", () => {
 
   test("serving edits are household-scoped and invalidate shopping and cook views", async () => {
     prisma.recipe.findMany.mockResolvedValue([]);
+    prisma.recipeRevision.findMany.mockResolvedValue([]);
+    prisma.mealPlanTemplate.findMany.mockResolvedValue([]);
     prisma.mealPlan.findUnique.mockResolvedValue({ id: "plan", entries: [{ ...entryFields, servingsOverride: 2, recipe: { id: "recipe", title: "Rice", servings: 2, imageUrl: null }, recipeRevision: null }] });
     const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
     const form = elements(page).find((element) => element.props.className === "planned-servings")!;
@@ -327,7 +413,7 @@ describe("shopping list freshness and planned servings", () => {
 
   test.each([0, -1, 0.5, 101, "bad"])("rejects invalid API servings %s", async (servingsOverride) => {
     expect((await planMeals(request("/api/meal-plans", { entries: [{ date: "2030-04-03", mealType: "DINNER", recipeId: "recipe", servingsOverride }] }))).status).toBe(400);
-    expect(prisma.mealPlanEntry.upsert).not.toHaveBeenCalled();
+      expect(prisma.mealPlanEntry.create).not.toHaveBeenCalled();
   });
 });
 

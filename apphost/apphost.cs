@@ -8,6 +8,12 @@
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Worktrees must never migrate another checkout's development database.
+var isWorktree = builder.ExecutionContext.IsRunMode && File.Exists(Path.Combine(builder.AppHostDirectory, "..", ".git"));
+var dataSuffix = isWorktree
+    ? "-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(builder.AppHostDirectory.ToLowerInvariant())))[..10].ToLowerInvariant()
+    : "";
+
 var compose = builder.AddDockerComposeEnvironment("picknic")
     .WithDashboard(enabled: false);
 
@@ -30,10 +36,10 @@ var workosRedirectUri = builder.AddParameter("workos-redirect-uri");
 
 var postgres = builder.AddPostgres("postgres")
     .WithLifetime(ContainerLifetime.Persistent)
-    .WithDataVolume("picknic-postgres")
+    .WithDataVolume("picknic-postgres" + dataSuffix)
     .PublishAsDockerComposeService((_, service) => service.Restart = "unless-stopped");
 if (builder.ExecutionContext.IsRunMode) {
-    postgres.WithContainerName("picknic-postgres");
+    postgres.WithContainerName("picknic-postgres" + dataSuffix);
 }
 // Optionally, add pgAdmin for database management (runs in a separate container)
 // var pgAdmin = postgres.WithPgAdmin();
@@ -53,7 +59,7 @@ var migrations = builder.AddJavaScriptApp("migrations", "../web", "prisma:migrat
     });
 
 var web = builder.AddNextJsApp("web", "../web")
-    .WithHttpEndpoint(port: 5333, env: "PORT")
+    .WithHttpEndpoint(port: 5333, env: "PORT", isProxied: !isWorktree)
     .WithHttpHealthCheck("/", endpointName: "http")
     .WithOtlpExporter()
     .WithBun(install: false)
