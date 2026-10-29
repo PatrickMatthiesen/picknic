@@ -15,7 +15,7 @@ export async function getShoppingListForWeek(householdId: string, weekStart: Dat
     include: { entries: true },
   });
 
-  if (!mealPlan) return getStandaloneShoppingList(householdId);
+  if (!mealPlan) return null;
 
   const list = await prisma.shoppingList.findFirst({
     where: { householdId, mealPlanId: mealPlan.id },

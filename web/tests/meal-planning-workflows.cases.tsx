@@ -324,6 +324,19 @@ describe("selected shopping week", () => {
     expect(prisma.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({ shoppingListId: "future-list", source: "MANUAL", ingredientName: "Bread" });
   });
 
+  test("adding before a weekly plan exists explicitly opens standalone shopping", async () => {
+    prisma.mealPlan.findUnique.mockResolvedValue(null);
+    prisma.shoppingList.findFirst.mockResolvedValue({ id: "standalone", items: [] });
+    expect(await getShoppingListForWeek("reader-household", new Date("2030-04-01"))).toBeNull();
+    const page = await ShoppingListPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
+    const form = elements(page).find(element => element.props.className === "shopping-add-row")!;
+    const data = new FormData(); data.set("ingredientName", "Bread"); data.set("quantity", "1");
+    let redirectError: unknown;
+    try { await (form.props.action as (data: FormData) => Promise<void>)(data); } catch (error) { redirectError = error; }
+    expect(redirectError).toMatchObject({ digest: expect.stringContaining("/shopping-list?list=standalone&saved=added") });
+    expect(prisma.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({ shoppingListId: "standalone", ingredientName: "Bread", source: "MANUAL" });
+  });
+
   test("falls back to the current week for an invalid selection", async () => {
     const { getWeekStartUtc } = await import("../src/lib/meal-plan");
     await ShoppingListPage({ searchParams: Promise.resolve({ week: "not-a-date" }) });

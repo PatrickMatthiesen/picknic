@@ -95,19 +95,33 @@ export function extractRecipeJsonLd(html: string): string | null {
 }
 
 function findRecipeJsonLd(html: string): Record<string, unknown> | null {
-  const scripts = [...html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)];
+  if (html.length > 1_000_000) return null;
+  const scripts = html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi);
+  let remainingNodes = 20_000;
+  let scriptCount = 0;
   for (const [, raw] of scripts) {
+    if (++scriptCount > 64) return null;
     try {
       const data: unknown = JSON.parse(raw!.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));
-      const stack: unknown[] = Array.isArray(data) ? [...data] : [data];
+      const stack = [{ value: data, depth: 0 }];
+      let recipe: Record<string, unknown> | null = null;
       while (stack.length) {
-        const value = stack.pop();
-        if (!record(value)) { if (Array.isArray(value)) stack.push(...value); continue; }
-        if (value["@graph"]) stack.push(value["@graph"]);
-        const types = Array.isArray(value["@type"]) ? value["@type"] : [value["@type"]];
-        if (types.includes("Recipe")) return value;
-        stack.push(...Object.values(value));
+        const { value, depth } = stack.pop()!;
+        if (--remainingNodes < 0 || depth > 64) return null;
+        if (!value || typeof value !== "object") continue;
+        if (record(value)) {
+          const types = Array.isArray(value["@type"]) ? value["@type"] : [value["@type"]];
+          if (!recipe && types.includes("Recipe")) recipe = value;
+        }
+        // @graph is already one of the object's values. Queue every child once.
+        const children: unknown[] = Array.isArray(value) ? value : Object.values(value);
+        if (children.length + stack.length > remainingNodes) return null;
+        for (const child of children) stack.push({ value: child, depth: depth + 1 });
       }
+      // Validate the whole tree before returning a recipe, including the subtree
+      // later processed by instruction extraction. Deep instruction nesting must
+      // not bypass the same depth/work limits through an early match.
+      if (recipe) return recipe;
     } catch { /* Ignore malformed metadata and keep looking. */ }
   }
   return null;

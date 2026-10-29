@@ -174,7 +174,8 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
     });
 
     revalidatePath("/shopping-list");
-    redirect(`${listHref}&saved=added`);
+    const destination = standaloneMode || !mealPlan ? "/shopping-list?list=standalone" : listHref;
+    redirect(`${destination}&saved=added`);
   }
 
   const shoppingList = standaloneMode ? await getStandaloneShoppingList(householdId) : await getShoppingListForWeek(householdId, weekStart);
@@ -216,6 +217,7 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
       ) : null}
       {search.saved ? <p className="shopping-plan-notice" role="status">{search.saved === "added" ? "Item added to the list." : search.saved === "updated" ? "Item updated." : "Shopping list refreshed."}</p> : null}
       <section className="app-theme-card shopping-tools rounded-lg p-3">
+        {!standaloneMode ? <p className="app-theme-muted text-sm">Items added before a meal plan exists open in Standalone shopping.</p> : null}
         <form action={addManualItem} className="shopping-add-row">
           <label className="sr-only" htmlFor="new-item">Add item</label>
           <input className="app-theme-input rounded-lg px-3 py-2" id="new-item" name="ingredientName" placeholder="Add an item" required />

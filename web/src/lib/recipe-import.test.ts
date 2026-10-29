@@ -2,6 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { extractRecipeJsonLd, extractStructuredRecipeJsonLd, isPrivateImportAddress, normalizeRecipeFileUnits, safeRecipeUrl, validatePicknicRecipeFile } from "./recipe-import";
 
 describe("safe recipe URL import", () => {
+  const jsonLdPage = (data: unknown) => `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
+  test("nested graph searches stay linear rather than revisiting the same subtree", () => {
+    let graph: unknown = { "@type": "Thing" };
+    for (let i = 0; i < 24; i++) graph = { "@graph": graph };
+    const started = performance.now();
+    expect(extractStructuredRecipeJsonLd(jsonLdPage(graph))).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+  test("JSON-LD node, depth and script budgets also cover matched recipes", () => {
+    let deep: unknown = { "@type": "HowToStep", text: "Mix." };
+    for (let i = 0; i < 70; i++) deep = { itemListElement: [deep] };
+    const recipe = { "@type": "Recipe", name: "Soup", recipeIngredient: ["Water"], recipeInstructions: deep };
+    expect(extractStructuredRecipeJsonLd(jsonLdPage(recipe))).toBeNull();
+    expect(extractStructuredRecipeJsonLd(jsonLdPage(Array(20_001).fill(null)))).toBeNull();
+    expect(extractStructuredRecipeJsonLd(jsonLdPage({}).repeat(65) + jsonLdPage({ ...recipe, recipeInstructions: "Mix." }))).toBeNull();
+    expect(extractStructuredRecipeJsonLd(jsonLdPage({ ...recipe, recipeInstructions: "Mix." }))?.recipe.title).toBe("Soup");
+  });
   test("accepts only credential-free HTTPS hostnames, not local or literal IP targets", () => {
     expect(safeRecipeUrl("https://recipes.example/cake")?.hostname).toBe("recipes.example");
     for (const value of ["https://recipes.example:8443/x", "http://recipes.example/x", "https://user:pass@recipes.example/x", "https://localhost/x", "https://192.168.1.4/x", "https://[::1]/x", `https://${"a".repeat(2050)}.com/`]) expect(safeRecipeUrl(value)).toBeNull();
