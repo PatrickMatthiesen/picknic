@@ -1,0 +1,17 @@
+.shopping-category { display: grid; gap: .5rem; margin-top: 1rem; }
+.shopping-category h3 { color: var(--muted-foreground); font-size: .78rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.shopping-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .35rem .75rem; }
+.shopping-edit-row { display: grid; grid-template-columns: minmax(8rem, 1fr) 5rem 5rem auto; gap: .4rem; align-items: center; }
+.shopping-row-meta { grid-column: 1; display: flex; gap: .7rem; color: var(--muted-foreground); font-size: .72rem; }
+.shopping-tools { display: grid; gap: .7rem; }
+.shopping-add-row, .shopping-refresh-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.shopping-add-row input:first-of-type { flex: 1 1 12rem; }
+.shopping-add-row input { min-height: 2.75rem; }
+.shopping-refresh-row { justify-content: space-between; border-top: 1px solid var(--border); padding-top: .65rem; }
+.shopping-row > form:last-child { grid-column: 2; grid-row: 1 / span 2; }
+@media (max-width: 640px) {
+  .shopping-row { grid-template-columns: 1fr; }
+  .shopping-edit-row { grid-template-columns: minmax(0, 1fr) 4.5rem; }
+  .shopping-edit-row input[name="unit"] { grid-column: 1; }
+  .shopping-row-meta, .shopping-row > form:last-child { grid-column: 1; grid-row: auto; }
+}

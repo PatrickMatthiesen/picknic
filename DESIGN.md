@@ -173,7 +173,7 @@ Picknic is flat by default. Depth comes from canvas-versus-surface tone, one-pix
 - On narrow layouts the table scrolls horizontally with stable day widths and touch-friendly snapping.
 
 ### Cook Session
-- No global app navigation after entry. Ingredients and servings occupy the sidebar; recipe title, restrained image, and numbered steps dominate the main area.
+- Keep the app sidebar visible on Cook pages and during a cook session. On mobile, keep the shared bottom navigation. Ingredients and servings occupy a separate panel inside the Cook workspace; recipe title, restrained image, and numbered steps dominate the main area.
 - Completion is attached to each step circle. Ingredient views use `All` and `By component`.
 
 ## Do's and Don'ts

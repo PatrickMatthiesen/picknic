@@ -56,7 +56,7 @@ describe("buildAutoShoppingItems", () => {
     }]);
   });
 
-  test("keeps ambiguous units separate by canonical id", () => {
+  test("converts explicitly identified compatible cups", () => {
     expect(buildAutoShoppingItems({
       entries: [{
         servingsOverride: null,
@@ -71,19 +71,11 @@ describe("buildAutoShoppingItems", () => {
     })).toEqual([
       {
         ingredientName: "Flour",
-        quantity: 1,
+        quantity: 1.95,
         source: "AUTO",
         status: "PENDING",
         unit: "cup",
         unitId: "metric-cup",
-      },
-      {
-        ingredientName: "Flour",
-        quantity: 1,
-        source: "AUTO",
-        status: "PENDING",
-        unit: "cup",
-        unitId: "us-cup",
       },
     ]);
   });
@@ -163,7 +155,7 @@ describe("subtractPantryFromShoppingItems", () => {
     ]);
   });
 
-  test("subtracts explicitly Metric pantry stock only from Metric quantities", () => {
+  test("converts compatible cup measures when subtracting pantry stock", () => {
     const adjusted = subtractPantryFromShoppingItems(
       [
         { ingredientName: "Flour", quantity: 2, source: "AUTO", status: "PENDING", unit: "cup", unitId: "metric-cup" },
@@ -174,7 +166,15 @@ describe("subtractPantryFromShoppingItems", () => {
 
     expect(adjusted.map((item) => [item.unitId, item.quantity])).toEqual([
       ["metric-cup", 1],
-      ["us-cup", 2],
+      ["us-cup", 0.94],
     ]);
+  });
+
+  test("aggregates compatible gram and kilogram quantities in the first listed unit", () => {
+    const combined = buildAutoShoppingItems({ entries: [
+      { servingsOverride: null, recipe: { servings: 2, ingredients: [{ name: "Flour", quantity: 500, unit: "g", unitId: "metric-gram" }] } },
+      { servingsOverride: null, recipe: { servings: 2, ingredients: [{ name: "Flour", quantity: 0.5, unit: "kg", unitId: "metric-kilogram" }] } },
+    ] });
+    expect(combined.map((item) => [item.quantity, item.unitId])).toEqual([[1000, "metric-gram"]]);
   });
 });

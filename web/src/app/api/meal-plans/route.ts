@@ -95,7 +95,7 @@ export async function GET(request: Request) {
           const snapshot = recipeRevision ? readRecipeSnapshot(recipeRevision.snapshot) : null;
           return {
             ...entry,
-            recipe: snapshot
+            recipe: snapshot && entry.recipe
               ? { id: entry.recipe.id, title: snapshot.title, servings: snapshot.servings }
               : entry.recipe,
           };
@@ -174,25 +174,10 @@ export async function POST(request: Request) {
 
   await prisma.$transaction(
     entries.map((entry) =>
-      prisma.mealPlanEntry.upsert({
-        where: {
-          mealPlanId_date_mealType: {
-            mealPlanId: mealPlan.id,
-            date: entry.date,
-            mealType: entry.mealType,
-          },
-        },
-        create: {
-          mealPlanId: mealPlan.id,
-          date: entry.date,
-          mealType: entry.mealType,
-          recipeId: entry.recipeId,
-          recipeRevisionId: revisions.get(entry.recipeId),
-          servingsOverride: entry.servingsOverride,
-        },
-        update: {
-          recipeId: entry.recipeId,
-          recipeRevisionId: revisions.get(entry.recipeId),
+      prisma.mealPlanEntry.create({
+        data: {
+          mealPlanId: mealPlan.id, date: entry.date, mealType: entry.mealType,
+          recipeId: entry.recipeId, recipeRevisionId: revisions.get(entry.recipeId),
           servingsOverride: entry.servingsOverride,
         },
       }),
@@ -219,7 +204,7 @@ export async function POST(request: Request) {
           const snapshot = recipeRevision ? readRecipeSnapshot(recipeRevision.snapshot) : null;
           return {
             ...entry,
-            recipe: snapshot
+            recipe: snapshot && entry.recipe
               ? { id: entry.recipe.id, title: snapshot.title, servings: snapshot.servings }
               : entry.recipe,
           };

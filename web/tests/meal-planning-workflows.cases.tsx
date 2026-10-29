@@ -6,11 +6,12 @@ import { isValidElement, type ReactNode } from "react";
 // helpers used by the profile-linking tests in the main test suite.
 const prisma = {
   recipe: { findMany: mock(), findUniqueOrThrow: mock() },
-  recipeRevision: { findFirst: mock(), findUnique: mock(), create: mock() },
+  recipeRevision: { findFirst: mock(), findUnique: mock(), findMany: mock(), create: mock() },
   mealPlan: { findUnique: mock(), upsert: mock() },
-  mealPlanEntry: { upsert: mock(), updateMany: mock() },
+  mealPlanEntry: { create: mock(), updateMany: mock() },
+  mealPlanTemplate: { findMany: mock() },
   pantryItem: { findFirst: mock(), findMany: mock(), update: mock() },
-  shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock() },
+  shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock(), create: mock() },
   shoppingListItem: { findMany: mock(), create: mock(), update: mock(), updateMany: mock(), deleteMany: mock() },
   $transaction: mock(async (operation: unknown) => typeof operation === "function"
     ? operation(prisma)
@@ -44,6 +45,7 @@ beforeEach(() => {
   revalidatePath.mockClear();
   prisma.mealPlan.upsert.mockResolvedValue({ id: "plan" });
   prisma.mealPlan.findUnique.mockResolvedValue(null);
+  prisma.shoppingList.create.mockResolvedValue({ id: "future-list" });
 });
 
 function request(path: string, body: unknown, method = "POST") {
@@ -60,6 +62,20 @@ const planRequest = () => request("/api/meal-plans", {
 });
 
 describe("planning shared recipes", () => {
+  test("creates additive entries so multiple dishes in one slot remain assigned", async () => {
+    const ownedRecipes = ["dish-one", "dish-two", "dish-three"].map((id) => ({ id, householdId: "reader-household", createdById: "reader", latestRevisionId: null }));
+    prisma.recipe.findMany.mockImplementation(async ({ where }) => ownedRecipes.filter((recipe) => where.id.in.includes(recipe.id)));
+    prisma.recipe.findUniqueOrThrow.mockImplementation(async ({ where }) => ({ ...ownedRecipes.find((recipe) => recipe.id === where.id), createdBy: { displayName: "Reader" }, title: where.id, servings: 2, visibility: "PRIVATE", ingredients: [], steps: [] }));
+    prisma.recipeRevision.findFirst.mockResolvedValue({ version: 1 });
+    prisma.recipeRevision.create.mockImplementation(async ({ data }) => ({ id: `revision-${data.recipeId}` }));
+    const makeRequest = (ids: string[]) => request("/api/meal-plans", { weekStart: "2030-04-01", entries: ids.map((recipeId) => ({ date: "2030-04-03", mealType: "DINNER", recipeId })) });
+    expect((await planMeals(makeRequest(["dish-one", "dish-two"]))).status).toBe(201);
+    expect((await planMeals(makeRequest(["dish-three"]))).status).toBe(201);
+    expect(prisma.mealPlanEntry.create).toHaveBeenCalledTimes(3);
+    expect(prisma.mealPlanEntry.create.mock.calls.map(([call]) => call.data.recipeId)).toEqual(["dish-one", "dish-two", "dish-three"]);
+    expect(prisma.mealPlanEntry.updateMany).not.toHaveBeenCalled();
+  });
+
   test.each([
     ["unpublished", "PRIVATE", null],
     ["public", "PUBLIC", null],
@@ -73,7 +89,7 @@ describe("planning shared recipes", () => {
       saves: { some: { userId: "reader" } }, latestRevisionId: { not: null },
     });
     expect(prisma.recipeRevision.findFirst).toHaveBeenCalledWith({ where: { id: "published-revision", recipeId: sharedRecipe.id } });
-    expect(prisma.mealPlanEntry.upsert.mock.calls[0][0].create.recipeRevisionId).toBe("published-revision");
+    expect(prisma.mealPlanEntry.create.mock.calls[0][0].data.recipeRevisionId).toBe("published-revision");
     expect(prisma.recipe.findUniqueOrThrow).not.toHaveBeenCalled();
     expect(prisma.recipeRevision.create).not.toHaveBeenCalled();
   });
@@ -93,7 +109,7 @@ describe("planning shared recipes", () => {
     prisma.recipe.findMany.mockResolvedValue([{ ...sharedRecipe, latestRevisionId: null }]);
     expect((await planMeals(planRequest())).status).toBe(400);
     expect(prisma.recipe.findUniqueOrThrow).not.toHaveBeenCalled();
-    expect(prisma.mealPlanEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.mealPlanEntry.create).not.toHaveBeenCalled();
   });
 
   test("still snapshots the household's own private recipe", async () => {
@@ -103,7 +119,7 @@ describe("planning shared recipes", () => {
     prisma.recipeRevision.findFirst.mockResolvedValue({ version: 1 });
     prisma.recipeRevision.create.mockResolvedValue({ id: "own-private-revision" });
     expect((await planMeals(planRequest())).status).toBe(201);
-    expect(prisma.mealPlanEntry.upsert.mock.calls[0][0].create.recipeRevisionId).toBe("own-private-revision");
+    expect(prisma.mealPlanEntry.create.mock.calls[0][0].data.recipeRevisionId).toBe("own-private-revision");
   });
 
   test("rejects recipes outside the access query without writing a plan", async () => {
@@ -268,14 +284,14 @@ describe("selected shopping week", () => {
 
   test("regenerates and adds manual items to the selected week", async () => {
     const page = await ShoppingListPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
-    await formAction(page, 0)(new FormData());
     const data = new FormData();
     data.set("ingredientName", "Bread");
-    await formAction(page, 1)(data);
+    await expect(formAction(page, 0)(data)).rejects.toThrow("NEXT_REDIRECT");
+    await expect(formAction(page, 1)(new FormData())).rejects.toThrow("NEXT_REDIRECT");
     for (const [query] of prisma.mealPlan.findUnique.mock.calls) {
       expect(query.where.householdId_weekStart.weekStart).toEqual(new Date("2030-04-01"));
     }
-    expect(prisma.shoppingList.upsert.mock.calls[1][0].create.name).toBe("Week of 2030-04-01");
+    expect(prisma.shoppingList.upsert.mock.calls[0][0].create.name).toBe("Week of 2030-04-01");
     expect(prisma.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({ shoppingListId: "future-list", source: "MANUAL", ingredientName: "Bread" });
   });
 
@@ -288,6 +304,8 @@ describe("selected shopping week", () => {
   test("planner links shopping to the week currently being planned", async () => {
     prisma.mealPlan.findUnique.mockResolvedValue(null);
     prisma.recipe.findMany.mockResolvedValue([]);
+    prisma.recipeRevision.findMany.mockResolvedValue([]);
+    prisma.mealPlanTemplate.findMany.mockResolvedValue([]);
     const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
     expect(elements(page).map((element) => element.props.href)).toContain("/shopping-list?week=2030-04-01");
   });
@@ -312,6 +330,8 @@ describe("shopping list freshness and planned servings", () => {
 
   test("serving edits are household-scoped and invalidate shopping and cook views", async () => {
     prisma.recipe.findMany.mockResolvedValue([]);
+    prisma.recipeRevision.findMany.mockResolvedValue([]);
+    prisma.mealPlanTemplate.findMany.mockResolvedValue([]);
     prisma.mealPlan.findUnique.mockResolvedValue({ id: "plan", entries: [{ ...entryFields, servingsOverride: 2, recipe: { id: "recipe", title: "Rice", servings: 2, imageUrl: null }, recipeRevision: null }] });
     const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
     const form = elements(page).find((element) => element.props.className === "planned-servings")!;
@@ -327,7 +347,7 @@ describe("shopping list freshness and planned servings", () => {
 
   test.each([0, -1, 0.5, 101, "bad"])("rejects invalid API servings %s", async (servingsOverride) => {
     expect((await planMeals(request("/api/meal-plans", { entries: [{ date: "2030-04-03", mealType: "DINNER", recipeId: "recipe", servingsOverride }] }))).status).toBe(400);
-    expect(prisma.mealPlanEntry.upsert).not.toHaveBeenCalled();
+      expect(prisma.mealPlanEntry.create).not.toHaveBeenCalled();
   });
 });
 

@@ -122,6 +122,34 @@ export default async function RecipeDetailPage({ params }: PageProps) {
     revalidatePath(`/recipes/${recipeId}`);
   }
 
+  async function addSelectedToShopping(formData: FormData) {
+    "use server";
+    const selected = new Set(formData.getAll("ingredientId").filter((value): value is string => typeof value === "string"));
+    if (!selected.size) throw new Error("Choose at least one ingredient.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household is connected to this account.");
+    const ingredients = recipe.ingredients.filter((ingredient) => selected.has(ingredient.id));
+    if (!ingredients.length) throw new Error("Selected ingredients are no longer available.");
+    const list = await prisma.shoppingList.findFirst({ where: { householdId: activeMembership.householdId, mealPlanId: null }, select: { id: true } })
+      ?? await prisma.shoppingList.create({ data: { householdId: activeMembership.householdId, createdById: context.userId, name: "Shopping list" }, select: { id: true } });
+    await prisma.shoppingListItem.createMany({ data: ingredients.map((ingredient) => {
+      const value = formData.get(`quantity-${ingredient.id}`);
+      const quantity = typeof value === "string" && value.trim() ? Number(value) : null;
+      if (quantity !== null && (!Number.isFinite(quantity) || quantity < 0)) throw new Error(`Enter a valid quantity for ${ingredient.name}.`);
+      return ({
+      shoppingListId: list.id,
+      recipeId,
+      ingredientName: ingredient.name,
+      quantity,
+      unit: ingredient.unit,
+      unitId: ingredient.unitId,
+      source: "MANUAL" as const,
+    }); }) });
+    revalidatePath("/shopping-list");
+    redirect("/shopping-list?list=standalone&saved=added");
+  }
+
   async function togglePublic() {
     "use server";
     const context = await requireAppAuthContext();
@@ -270,7 +298,8 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       subtitle={recipe.description ?? "A household recipe ready for this week."}
       headerChildren={
         <div className="recipe-detail-actions">
-          <Link className="app-theme-primary-button" href={`/planner?${canReadLive ? "" : "view=saved&"}q=${encodeURIComponent(recipe.title)}`}><CalendarPlus size={17} /> Plan</Link>
+          <Link className="app-theme-primary-button" href={`/cook?recipe=${recipe.id}`}><CalendarPlus size={17} /> Cook now</Link>
+          <Link className="app-theme-secondary-button" href={`/planner?${canReadLive ? "" : "view=saved&"}q=${encodeURIComponent(recipe.title)}`}><CalendarPlus size={17} /> Plan</Link>
           {!recipe.deletedAt || recipe.saves.length ? <form action={toggleSave}><button className="app-theme-secondary-button" type="submit"><Bookmark fill={recipe.saves.length ? "currentColor" : "none"} size={17} />{recipe.saves.length ? "Saved" : "Save recipe"}</button></form> : null}
           {ownsRecipe ? <Link className="app-theme-secondary-button" href={`/recipes/${recipe.id}/edit`}><Pencil size={16} /> Edit</Link> : null}
           {!ownsRecipe ? <form action={customizeRecipe}><button className="app-theme-secondary-button" type="submit"><CopyPlus size={16} /> Customize</button></form> : null}
@@ -291,7 +320,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       </section>
 
       <div className="recipe-detail-body">
-        <RecipeIngredientsClient groups={ingredientGroups.map((group) => ({
+        <RecipeIngredientsClient addSelected={addSelectedToShopping} groups={ingredientGroups.map((group) => ({
           component: group.component,
           key: group.key,
           ingredients: group.ingredients.map((ingredient) => ({

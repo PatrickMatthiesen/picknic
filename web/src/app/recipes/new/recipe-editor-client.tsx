@@ -27,6 +27,7 @@ import { UnitCombobox } from "@/app/_components/unit-combobox";
 import { getSupportedRecipeImageUrl } from "@/lib/recipe-display";
 import { MAX_RECIPE_IMPORT_CHARACTERS } from "@/lib/ai-model";
 import { MAX_RECIPE_MINUTES } from "@/lib/recipe-input";
+import { validatePicknicRecipeFile, type PicknicRecipeFile } from "@/lib/recipe-import";
 import {
   inferMeasurementSystem,
   inferSourceMeasurementSystem,
@@ -208,6 +209,7 @@ export function RecipeEditorClient({
   const [draft, setDraft] = useState(preparedInitialDraft);
   const [tagsText, setTagsText] = useState(initialDraft.tags.join(", "));
   const [sourceText, setSourceText] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [selectedAiModel, setSelectedAiModel] = useState(aiRecipeImportModel ?? "");
   const [showImport, setShowImport] = useState(
     aiRecipeImportEnabled && searchParams.get("method") === "copy-paste",
@@ -225,37 +227,42 @@ export function RecipeEditorClient({
   const actionsMenuRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
-    setAuthoringSystem(inferMeasurementSystem(navigator.language));
+    const timer = setTimeout(() => setAuthoringSystem(inferMeasurementSystem(navigator.language)), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    try {
-      const rawDraft = window.localStorage.getItem(storageKey);
-      if (rawDraft) {
-        const stored: unknown = JSON.parse(rawDraft);
-        if (isStoredDraft(stored)) {
-          setSavedLocallyAt(stored.updatedAt);
-          if (JSON.stringify(meaningfulDraft(stored.draft)) !== JSON.stringify(meaningfulDraft(preparedInitialDraft))) {
-            const restored = prepareDraft(stored.draft);
-            setDraft(restored);
-            setTagsText(restored.tags.join(", "));
-            setRestoredDraftAt(stored.updatedAt);
+    let active = true;
+    const timer = setTimeout(() => {
+      try {
+        const rawDraft = window.localStorage.getItem(storageKey);
+        if (rawDraft) {
+          const stored: unknown = JSON.parse(rawDraft);
+          if (isStoredDraft(stored)) {
+            setSavedLocallyAt(stored.updatedAt);
+            if (JSON.stringify(meaningfulDraft(stored.draft)) !== JSON.stringify(meaningfulDraft(preparedInitialDraft))) {
+              const restored = prepareDraft(stored.draft);
+              setDraft(restored);
+              setTagsText(restored.tags.join(", "));
+              setRestoredDraftAt(stored.updatedAt);
+            }
           }
         }
+      } catch {
+        window.localStorage.removeItem(storageKey);
+      } finally {
+        if (active) setDraftReady(true);
       }
-    } catch {
-      window.localStorage.removeItem(storageKey);
-    } finally {
-      setDraftReady(true);
-    }
+    }, 0);
+    return () => { active = false; clearTimeout(timer); };
   }, [preparedInitialDraft, storageKey]);
 
   useEffect(() => {
     if (!draftReady) return;
     if (JSON.stringify(meaningfulDraft(draft)) === JSON.stringify(meaningfulDraft(preparedInitialDraft))) {
       window.localStorage.removeItem(storageKey);
-      setSavedLocallyAt(null);
-      return;
+      const timer = setTimeout(() => setSavedLocallyAt(null), 0);
+      return () => clearTimeout(timer);
     }
     const timer = setTimeout(() => {
       const updatedAt = new Date().toISOString();
@@ -372,6 +379,56 @@ export function RecipeEditorClient({
     } finally {
       setIsParsing(false);
     }
+  }
+
+  async function loadRecipeUrl() {
+    setError(null);
+    setIsParsing(true);
+    try {
+      const response = await fetch("/api/recipes/import-url", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: sourceUrl }),
+      });
+      const payload = await response.json() as { draft?: unknown; error?: string };
+      if (!response.ok || !validatePicknicRecipeFile(payload.draft)) throw new Error(payload.error ?? "Could not read that recipe page.");
+      applyImportedDraft(payload.draft);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not read that recipe page.");
+    } finally { setIsParsing(false); }
+  }
+
+  function applyImportedDraft(payload: PicknicRecipeFile) {
+    const incoming = payload.recipe;
+    const imported: RecipeDraft = {
+      ...incoming,
+      ingredientComponents: incoming.ingredientComponents.map((component) => ({ ...component, id: createId("ingredient-component"), ingredients: component.ingredients.map((ingredient) => ({ ...ingredient, id: createId("ingredient"), ...normalizeUnitInput(ingredient.unit, authoringSystem) })) })),
+      instructionComponents: incoming.instructionComponents.map((component) => ({ ...component, id: createId("instruction-component"), steps: component.steps.map((step) => ({ ...step, id: createId("step") })) })),
+    };
+    setDraft(prepareDraft(imported));
+    setTagsText(incoming.tags.join(", "));
+    setError(null);
+    setShowImport(false);
+  }
+
+  function exportRecipeJson() {
+    const blob = new Blob([JSON.stringify({ format: "picknic-recipe-v1", recipe: meaningfulDraft(draft) }, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `${draft.title.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "recipe"}.picknic.json`;
+    link.click();
+    URL.revokeObjectURL(href);
+  }
+
+  async function importRecipeJson(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      if (file.size > 1_000_000 || !file.name.endsWith(".json")) throw new Error("Choose a Picknic JSON recipe file under 1 MB.");
+      const payload: unknown = JSON.parse(await file.text());
+      if (!validatePicknicRecipeFile(payload)) throw new Error("This file is not a valid Picknic recipe v1 export.");
+      applyImportedDraft(payload);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not import that recipe file."); }
   }
 
   function updateIngredient(componentId: string, ingredientId: string, patch: Partial<IngredientDraft>) {
@@ -546,7 +603,7 @@ export function RecipeEditorClient({
         <header className="recipe-authoring-header">
           <Link className="recipe-authoring-back" href="/recipes"><ArrowLeft aria-hidden="true" size={18} /> <span>{recipeId ? "Edit recipe" : "Create recipe"}</span></Link>
           <div className="recipe-authoring-header-actions">
-            {aiRecipeImportEnabled ? <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Paste recipe</button> : null}
+            <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Import recipe</button>
             <details className="recipe-authoring-actions-menu" ref={actionsMenuRef}>
               <summary aria-label="More recipe actions" title="More recipe actions"><MoreHorizontal aria-hidden="true" size={18} /></summary>
               <div><button onClick={clearRecipe} type="button"><Trash2 aria-hidden="true" size={16} /> {recipeId ? "Discard local changes" : "Clear recipe"}</button></div>
@@ -561,30 +618,23 @@ export function RecipeEditorClient({
           <textarea id="recipe-description" maxLength={600} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Describe what makes this recipe worth cooking…" rows={2} value={draft.description} />
         </section>
 
-        {aiRecipeImportEnabled && showImport ? (
+        {showImport ? (
           <section className="recipe-import-panel">
             <div className="recipe-import-heading">
-              <label htmlFor="recipe-source">Paste the recipe text</label>
+              <label htmlFor="recipe-url">Import a recipe page URL</label>
               <button aria-label="Close paste recipe" onClick={() => setShowImport(false)} type="button"><X size={18} /></button>
             </div>
-            <div className="recipe-import-source">
-              <textarea maxLength={MAX_RECIPE_IMPORT_CHARACTERS} id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={3} value={sourceText} />
-            </div>
             <div className="recipe-import-actions">
-              <label className="recipe-model-choice">Model
-                <select disabled={isParsing} onChange={(event) => setSelectedAiModel(event.target.value)} value={selectedAiModel}>
-                  <option disabled value="">Choose an available model</option>
-                  {aiRecipeImportModels.map((model) => <option key={model} value={model}>{model}{model === aiRecipeImportModel ? " (default)" : ""}</option>)}
-                </select>
-              </label>
-              <button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim() || !selectedAiModel} onClick={parseRecipe} type="button">
-                {isParsing ? "Reading recipe…" : "Fill recipe details"}
-              </button>
+              <label htmlFor="recipe-url">Recipe page URL</label>
+              <input id="recipe-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://example.com/recipe" />
+              <button type="button" disabled={isParsing || !sourceUrl.trim()} onClick={loadRecipeUrl}>Read recipe page</button>
             </div>
+            {aiRecipeImportEnabled ? <><label htmlFor="recipe-source">Or paste recipe text</label><div className="recipe-import-source"><textarea maxLength={MAX_RECIPE_IMPORT_CHARACTERS} id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={3} value={sourceText} /></div><div className="recipe-import-actions"><label className="recipe-model-choice">Model<select disabled={isParsing} onChange={(event) => setSelectedAiModel(event.target.value)} value={selectedAiModel}><option disabled value="">Choose an available model</option>{aiRecipeImportModels.map((model) => <option key={model} value={model}>{model}{model === aiRecipeImportModel ? " (default)" : ""}</option>)}</select></label><button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim() || !selectedAiModel} onClick={parseRecipe} type="button">{isParsing ? "Reading recipe…" : "Fill recipe details"}</button></div></> : null}
           </section>
         ) : null}
 
         <section className="recipe-writing-section">
+          <div className="recipe-writing-heading"><h2>Recipe file</h2><div><label className="recipe-paste-trigger" htmlFor="recipe-json-file">Import Picknic JSON</label><input id="recipe-json-file" accept=".json,application/json" hidden type="file" onChange={(event) => { void importRecipeJson(event.target.files?.[0]); event.currentTarget.value = ""; }} /><button type="button" onClick={exportRecipeJson}>Export Picknic JSON</button></div></div>
           <div className="recipe-writing-heading"><h2>Ingredients</h2><button onClick={addIngredientComponent} type="button"><Plus size={17} /> Add component</button></div>
           <div className="recipe-component-list">
             {draft.ingredientComponents.map((component) => (

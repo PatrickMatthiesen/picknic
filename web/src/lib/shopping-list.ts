@@ -10,7 +10,7 @@ type IngredientInput = {
 
 type MealPlanEntryInput = {
   servingsOverride: number | null;
-  recipe: {
+  recipe?: {
     servings: number;
     ingredients: IngredientInput[];
   };
@@ -49,6 +49,7 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
   const aggregated = new Map<string, ShoppingAggregate>();
 
   for (const entry of mealPlan.entries) {
+    if (!entry.recipe) continue;
     const servings = entry.recipe.servings > 0 ? entry.recipe.servings : 1;
     const multiplier = entry.servingsOverride && entry.servingsOverride > 0 ? entry.servingsOverride / servings : 1;
 
@@ -60,11 +61,13 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
 
       const definition = getUnitById(ingredient.unitId) ?? resolveUnambiguousUnit(ingredient.unit);
       const unit = definition?.symbol ?? ingredient.unit?.trim() ?? null;
-      const key = shoppingItemKey({ ingredientName, unit, unitId: definition?.id });
       const numericQuantity =
         ingredient.quantity !== null && ingredient.quantity !== undefined ? Number(ingredient.quantity) : null;
       const scaledQuantity =
         numericQuantity !== null && Number.isFinite(numericQuantity) ? numericQuantity * multiplier : null;
+      const key = definition?.factorToBase != null && scaledQuantity !== null
+        ? `${ingredientName.trim().toLocaleLowerCase()}::${definition.dimension}`
+        : shoppingItemKey({ ingredientName, unit, unitId: definition?.id });
 
       const existing = aggregated.get(key);
       if (!existing) {
@@ -82,7 +85,12 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
       if (existing.quantity === null || scaledQuantity === null) {
         existing.quantity = null;
       } else {
-        existing.quantity += scaledQuantity;
+        const target = getUnitById(existing.unitId);
+        if (target && definition && target.dimension === definition.dimension && target.factorToBase && definition.factorToBase) {
+          existing.quantity += (scaledQuantity * definition.factorToBase) / target.factorToBase;
+        } else {
+          existing.quantity += scaledQuantity;
+        }
       }
     }
   }
@@ -108,8 +116,11 @@ export function subtractPantryFromShoppingItems(
       continue;
     }
 
-    const key = `${ingredientName.toLowerCase()}::${definition?.id ?? unit.toLowerCase()}`;
-    pantryTotals.set(key, roundToTwo((pantryTotals.get(key) ?? 0) + quantity));
+    const key = definition?.factorToBase != null
+      ? `${ingredientName.toLowerCase()}::${definition.dimension}`
+      : `${ingredientName.toLowerCase()}::unit:${definition?.id ?? unit.toLowerCase()}`;
+    const normalizedQuantity = definition?.factorToBase != null ? quantity * definition.factorToBase : quantity;
+    pantryTotals.set(key, roundToTwo((pantryTotals.get(key) ?? 0) + normalizedQuantity));
   }
 
   return shoppingItems
@@ -119,8 +130,11 @@ export function subtractPantryFromShoppingItems(
       }
 
       const definition = getUnitById(item.unitId) ?? resolveUnambiguousUnit(item.unit);
-      const key = `${item.ingredientName.toLowerCase()}::${definition?.id ?? item.unit.toLowerCase()}`;
-      const pantryQuantity = pantryTotals.get(key) ?? 0;
+      const key = definition?.factorToBase != null
+        ? `${item.ingredientName.toLowerCase()}::${definition.dimension}`
+        : `${item.ingredientName.toLowerCase()}::unit:${definition?.id ?? item.unit.toLowerCase()}`;
+      const pantryBaseQuantity = pantryTotals.get(key) ?? 0;
+      const pantryQuantity = definition?.factorToBase != null ? pantryBaseQuantity / definition.factorToBase : pantryBaseQuantity;
 
       if (pantryQuantity <= 0) {
         return item;

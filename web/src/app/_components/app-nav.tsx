@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen, CalendarDays, ChefHat, PackageOpen, ShoppingBasket, SunMoon } from "lucide-react";
+import { BookOpen, CalendarDays, ChefHat, PackageOpen, ShoppingBasket, SunMoon, Users } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { signOutAction } from "@/app/_actions/auth-actions";
 import { SmallSelect, type SmallSelectOption } from "@/app/_components/small-select";
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/cook", label: "Cook", icon: ChefHat },
   { href: "/shopping-list", label: "Shopping", icon: ShoppingBasket },
   { href: "/pantry", label: "Pantry", icon: PackageOpen },
+  { href: "/household", label: "Household", icon: Users },
 ];
 
 const THEME_OPTIONS: readonly SmallSelectOption<ThemeChoice>[] = [

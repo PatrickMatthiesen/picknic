@@ -1,12 +1,14 @@
 import { MembershipRole } from "@prisma/client";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
 import { AppPageShell } from "@/app/_components/page-shell";
 import { getUnitStorageKey, normalizeUnitInput } from "@/lib/units";
 
-export default async function PantryPage() {
+export default async function PantryPage({ searchParams }: { searchParams: Promise<{ view?: string; saved?: string }> }) {
+  const search = await searchParams;
   const { userId, organizationId } = await requireAppAuthContext();
   const membership = await resolveActiveMembership(userId, organizationId);
   const householdId = membership?.householdId ?? null;
@@ -14,13 +16,12 @@ export default async function PantryPage() {
   if (!householdId) {
     return (
       <main className="app-theme-page px-6 py-12">
-        <section className="app-theme-card mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 rounded-3xl p-8">
+        <section className="app-theme-card mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 rounded-lg p-8">
           <h1 className="text-3xl font-semibold tracking-tight">Pantry</h1>
           <p className="app-theme-muted">
-            Your account is authenticated, but no household was found yet. Complete organization setup in WorkOS and sign
-            in again.
+            Your account is authenticated, but no household was found yet. Open Household to manage your membership.
           </p>
-          <Link className="app-theme-link w-fit rounded-full px-4 py-2 text-sm font-medium" href="/">
+          <Link className="app-theme-link w-fit rounded-lg px-4 py-2 text-sm font-medium" href="/">
             Back home
           </Link>
         </section>
@@ -34,6 +35,7 @@ export default async function PantryPage() {
     const ingredientName = formData.get("ingredientName");
     const quantityValue = formData.get("quantity");
     const unitValue = formData.get("unit");
+    const expiryValue = formData.get("expiresAt");
 
     if (typeof ingredientName !== "string" || ingredientName.trim().length === 0) {
       throw new Error("Ingredient name is required.");
@@ -55,6 +57,7 @@ export default async function PantryPage() {
 
     const normalizedUnit = normalizeUnitInput(unitValue);
     const storedUnit = normalizedUnit.unit ?? unitValue.trim();
+    const expiresAt = typeof expiryValue === "string" && expiryValue ? new Date(`${expiryValue}T00:00:00.000Z`) : null;
 
     await prisma.pantryItem.upsert({
       where: {
@@ -69,6 +72,7 @@ export default async function PantryPage() {
         userId: context.userId,
         unitId: normalizedUnit.unitId,
         unitKey: getUnitStorageKey(storedUnit, normalizedUnit.unitId),
+        expiresAt,
       },
       create: {
         householdId: activeMembership.householdId,
@@ -78,10 +82,12 @@ export default async function PantryPage() {
         unit: storedUnit,
         unitId: normalizedUnit.unitId,
         unitKey: getUnitStorageKey(storedUnit, normalizedUnit.unitId),
+        expiresAt,
       },
     });
 
     revalidatePath("/pantry");
+    redirect("/pantry?saved=1");
   }
 
   async function updateQuantity(formData: FormData) {
@@ -114,6 +120,22 @@ export default async function PantryPage() {
     });
 
     revalidatePath("/pantry");
+    redirect("/pantry?saved=1");
+  }
+
+  async function updateExpiry(formData: FormData) {
+    "use server";
+    const itemId = formData.get("itemId");
+    const expiresValue = formData.get("expiresAt");
+    if (typeof itemId !== "string") throw new Error("Pantry item id is required.");
+    const expiresAt = typeof expiresValue === "string" && expiresValue ? new Date(`${expiresValue}T00:00:00.000Z`) : null;
+    if (expiresAt && Number.isNaN(expiresAt.valueOf())) throw new Error("Enter a valid use-by date.");
+    const context = await requireAppAuthContext();
+    const activeMembership = await resolveActiveMembership(context.userId, context.organizationId);
+    if (!activeMembership) throw new Error("No household found for this user.");
+    await prisma.pantryItem.updateMany({ where: { id: itemId, householdId: activeMembership.householdId }, data: { expiresAt } });
+    revalidatePath("/pantry");
+    redirect("/pantry?saved=1");
   }
 
   async function removePantryItem(formData: FormData) {
@@ -138,12 +160,17 @@ export default async function PantryPage() {
     });
 
     revalidatePath("/pantry");
+    redirect("/pantry?saved=1");
   }
 
   const items = await prisma.pantryItem.findMany({
     where: { householdId },
     orderBy: [{ ingredientName: "asc" }, { unit: "asc" }],
   });
+  const useSoonCutoff = new Date();
+  useSoonCutoff.setUTCDate(useSoonCutoff.getUTCDate() + 7);
+
+  const visibleItems = search.view === "soon" ? items.filter(item => item.expiresAt && item.expiresAt <= useSoonCutoff).sort((a,b) => a.expiresAt!.getTime() - b.expiresAt!.getTime()) : items;
 
   return (
     <AppPageShell
@@ -151,48 +178,60 @@ export default async function PantryPage() {
       title="Pantry"
       subtitle="Manage on-hand ingredients used to reduce generated shopping lists."
     >
-      <section className="app-theme-card rounded-3xl p-5">
+      {search.saved ? <p role="status" className="app-theme-muted">Pantry updated.</p> : null}
+      <nav className="recipe-tabs" aria-label="Pantry view"><Link className={search.view !== "soon" ? "is-active" : undefined} href="/pantry">All items</Link><Link className={search.view === "soon" ? "is-active" : undefined} href="/pantry?view=soon">Use soon</Link></nav>
+      <section className="pantry-add">
           <h2 className="text-lg font-semibold">Add or update pantry item</h2>
-          <form action={addOrUpdatePantryItem} className="mt-4 grid gap-3 sm:grid-cols-3">
-            <input className="app-theme-input rounded-xl px-3 py-2 sm:col-span-2" name="ingredientName" placeholder="Ingredient name" />
-            <input className="app-theme-input rounded-xl px-3 py-2" min={0} name="quantity" step="0.01" type="number" />
-            <input className="app-theme-input rounded-xl px-3 py-2 sm:col-span-2" name="unit" placeholder="Unit (e.g., g, cup, each)" />
-            <button className="app-theme-primary-button w-fit rounded-2xl px-5 py-2 text-sm font-medium" type="submit">
+          <form action={addOrUpdatePantryItem} className="mt-4 grid gap-3 sm:grid-cols-4">
+            <input className="app-theme-input rounded-lg px-3 py-2 sm:col-span-2" aria-label="Ingredient name" required name="ingredientName" placeholder="Ingredient name" />
+            <input className="app-theme-input rounded-lg px-3 py-2" aria-label="Quantity" min={0.01} required name="quantity" step="0.01" type="number" />
+            <input className="app-theme-input rounded-lg px-3 py-2" name="unit" placeholder="Unit (e.g., g, cup, each)" aria-label="Unit" />
+            <label className="app-theme-muted flex items-center gap-2 text-sm">Use by <input className="app-theme-input rounded-lg px-3 py-2" name="expiresAt" type="date" /></label>
+            <button className="app-theme-primary-button w-fit rounded-lg px-5 py-2 text-sm font-medium" type="submit">
               Save pantry item
             </button>
           </form>
       </section>
 
-      <section className="space-y-3">
+      <section className="pantry-working-list">
           <h2 className="text-lg font-semibold">Current pantry items</h2>
-          {items.length === 0 ? (
-            <p className="app-theme-card app-theme-muted rounded-3xl border-dashed p-5">No pantry items yet.</p>
+          {visibleItems.length === 0 ? (
+            <p className="app-theme-card app-theme-muted rounded-lg border-dashed p-5">No items in this view.</p>
           ) : (
-            items.map((item) => (
-              <article className="app-theme-card rounded-3xl p-4" key={item.id}>
-                <p className="text-sm font-medium">{item.ingredientName}</p>
-                <p className="app-theme-muted text-xs uppercase tracking-wide">{item.unit}</p>
+            visibleItems.map((item) => (
+              <article className="pantry-working-row" key={item.id}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-sm font-medium">{item.ingredientName}</p>
+                  <p className="app-theme-muted text-sm">{item.quantity.toString()} {item.unit}</p>
+                  {item.expiresAt ? <p className="app-theme-muted text-xs">{item.expiresAt <= useSoonCutoff ? "Use soon · " : "Use by "}{item.expiresAt.toLocaleDateString()}</p> : null}
+                </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <form action={updateQuantity} className="flex items-center gap-2">
                     <input name="itemId" type="hidden" value={item.id} />
                     <input
-                      className="app-theme-input w-28 rounded-xl px-3 py-2 text-sm"
+                      className="app-theme-input w-28 rounded-lg px-3 py-2 text-sm"
                       defaultValue={item.quantity.toString()}
                       min={0}
                       name="quantity"
                       step="0.01"
                       type="number"
                     />
-                    <button className="app-theme-secondary-button rounded-full px-4 py-2 text-sm font-medium" type="submit">
+                    <button className="app-theme-secondary-button rounded-lg px-4 py-2 text-sm font-medium" type="submit">
                       Update qty
                     </button>
+                  </form>
+                  <form action={updateExpiry} className="flex items-center gap-2">
+                    <input name="itemId" type="hidden" value={item.id} />
+                    <label className="app-theme-muted text-sm" htmlFor={`expires-${item.id}`}>Use by</label>
+                    <input className="app-theme-input rounded-lg px-2 py-2 text-sm" id={`expires-${item.id}`} name="expiresAt" type="date" defaultValue={item.expiresAt?.toISOString().slice(0, 10) ?? ""} />
+                    <button className="app-theme-secondary-button rounded-lg px-3 py-2 text-sm" type="submit">Save date</button>
                   </form>
 
                   {membership?.role === MembershipRole.OWNER ? (
                     <form action={removePantryItem}>
                       <input name="itemId" type="hidden" value={item.id} />
-                      <button className="app-theme-secondary-button rounded-full px-4 py-2 text-sm font-medium" type="submit">
+                      <button className="app-theme-secondary-button rounded-lg px-4 py-2 text-sm font-medium" type="submit">
                         Remove
                       </button>
                     </form>
