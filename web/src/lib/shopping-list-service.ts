@@ -2,7 +2,7 @@ import { ShoppingItemSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getShoppingPlanFingerprint } from "@/lib/shopping-list-state";
 import { readRecipeSnapshot } from "@/lib/recipe-revisions";
-import { buildAutoShoppingItems, shoppingItemKey, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
+import { buildAutoShoppingItems, shoppingAggregateKey, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
 
 export async function getShoppingListForWeek(householdId: string, weekStart: Date) {
   const mealPlan = await prisma.mealPlan.findUnique({
@@ -116,11 +116,11 @@ export async function generateShoppingListForWeek({
     const existingItems = await tx.shoppingListItem.findMany({
       where: { shoppingListId: shoppingList.id, source: ShoppingItemSource.AUTO },
     });
-    const existingByKey = new Map(existingItems.map((item) => [shoppingItemKey(item), item]));
+    const existingByKey = new Map(existingItems.map((item) => [shoppingAggregateKey(item), item]));
     const retainedIds: string[] = [];
 
     for (const item of autoItems) {
-      const existing = existingByKey.get(shoppingItemKey(item));
+      const existing = existingByKey.get(shoppingAggregateKey(item));
       if (existing) {
         retainedIds.push(existing.id);
         // Do not write status: keep checked/skipped state, including status

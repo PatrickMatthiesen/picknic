@@ -250,12 +250,36 @@ describe("shopping list refresh", () => {
     expect(items.map((item) => item.id)).toEqual(["manual"]);
   });
 
-  test("does not transfer checked status across incompatible cup systems", async () => {
-    items = [{ id: "us-flour", ingredientName: "Flour", quantity: 1, unit: "cup", unitId: "us-cup", source: "AUTO", status: "BOUGHT" }];
+  test("does not assume conversion for ambiguous legacy cups", async () => {
+    items = [{ id: "legacy-flour", ingredientName: "Flour", quantity: 1, unit: "cup", unitId: null, source: "AUTO", status: "BOUGHT" }];
     ingredients = [{ name: "Flour", quantity: 1, unit: "cup", unitId: "metric-cup" }];
     await generateList();
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ unitId: "metric-cup", status: "PENDING" });
+  });
+
+  test("display-unit changes preserve item identity and bought or skipped progress", async () => {
+    items = [];
+    ingredients = [{ name: "Flour", quantity: 500, unit: "g" }, { name: "Flour", quantity: 1, unit: "kg" }];
+    await generateList();
+    const originalId = items[0]!.id;
+    items[0]!.status = "BOUGHT";
+    ingredients = [{ name: "Flour", quantity: 1, unit: "kg" }];
+    await generateList();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: originalId, quantity: 1, unitId: "metric-kilogram", status: "BOUGHT" });
+    items[0]!.status = "SKIPPED";
+    ingredients = [{ name: "Flour", quantity: 500, unit: "g" }];
+    await generateList();
+    expect(items[0]).toMatchObject({ id: originalId, quantity: 500, unitId: "metric-gram", status: "SKIPPED" });
+  });
+
+  test("explicit cup systems convert while retaining progress", async () => {
+    items = [{ id: "us-flour", ingredientName: "Flour", quantity: 1, unit: "cup", unitId: "us-cup", source: "AUTO", status: "BOUGHT" }];
+    ingredients = [{ name: "Flour", quantity: 1, unit: "cup", unitId: "metric-cup" }];
+    await generateList();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: "us-flour", quantity: 1, unitId: "metric-cup", status: "BOUGHT" });
   });
 
   test("uses pinned ingredients instead of private live edits", async () => {

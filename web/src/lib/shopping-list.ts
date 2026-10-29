@@ -45,6 +45,13 @@ export function shoppingItemKey(item: { ingredientName: string; unit: string | n
   return `${item.ingredientName.trim().toLowerCase()}::${definition?.id ?? item.unit?.trim().toLowerCase() ?? ""}`;
 }
 
+export function shoppingAggregateKey(item: { ingredientName: string; unit: string | null; unitId?: string | null }): string {
+  const definition = getUnitById(item.unitId) ?? resolveUnambiguousUnit(item.unit);
+  return definition?.factorToBase != null
+    ? `${item.ingredientName.trim().toLowerCase()}::dimension:${definition.dimension}`
+    : `unit:${shoppingItemKey(item)}`;
+}
+
 export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggregate[] {
   const aggregated = new Map<string, ShoppingAggregate>();
 
@@ -65,9 +72,7 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
         ingredient.quantity !== null && ingredient.quantity !== undefined ? Number(ingredient.quantity) : null;
       const scaledQuantity =
         numericQuantity !== null && Number.isFinite(numericQuantity) ? numericQuantity * multiplier : null;
-      const key = definition?.factorToBase != null
-        ? `${ingredientName.trim().toLocaleLowerCase()}::${definition.dimension}`
-        : shoppingItemKey({ ingredientName, unit, unitId: definition?.id });
+      const key = shoppingAggregateKey({ ingredientName, unit, unitId: definition?.id });
 
       const existing = aggregated.get(key);
       if (!existing) {
