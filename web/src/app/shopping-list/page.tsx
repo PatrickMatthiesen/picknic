@@ -52,7 +52,12 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
     const context = await requireAppAuthContext();
     const activeHouseholdId = await resolveActiveHouseholdId(context.userId, context.organizationId);
     if (!activeHouseholdId) throw new Error("No household found for this user.");
-    const normalizedUnit = normalizeUnitInput(typeof unitValue === "string" ? unitValue : null);
+    const existing = await prisma.shoppingListItem.findFirst({
+      where: { id: itemId, shoppingList: { householdId: activeHouseholdId } },
+      select: { unitId: true },
+    });
+    if (!existing) throw new Error("Shopping item not found in this household.");
+    const normalizedUnit = normalizeUnitInput(typeof unitValue === "string" ? unitValue : null, "metric", existing.unitId);
     await prisma.shoppingListItem.updateMany({
       where: { id: itemId, shoppingList: { householdId: activeHouseholdId } },
       data: { ingredientName: ingredientName.trim(), quantity, unit: normalizedUnit.unit, unitId: normalizedUnit.unitId },

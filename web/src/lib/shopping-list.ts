@@ -65,7 +65,7 @@ export function buildAutoShoppingItems(mealPlan: MealPlanInput): ShoppingAggrega
         ingredient.quantity !== null && ingredient.quantity !== undefined ? Number(ingredient.quantity) : null;
       const scaledQuantity =
         numericQuantity !== null && Number.isFinite(numericQuantity) ? numericQuantity * multiplier : null;
-      const key = definition?.factorToBase != null && scaledQuantity !== null
+      const key = definition?.factorToBase != null
         ? `${ingredientName.trim().toLocaleLowerCase()}::${definition.dimension}`
         : shoppingItemKey({ ingredientName, unit, unitId: definition?.id });
 

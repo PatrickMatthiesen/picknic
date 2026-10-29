@@ -13,7 +13,7 @@ const prisma = {
   mealPlanTemplate: { findMany: mock() },
   pantryItem: { findFirst: mock(), findMany: mock(), update: mock() },
   shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock(), create: mock() },
-  shoppingListItem: { findMany: mock(), create: mock(), update: mock(), updateMany: mock(), deleteMany: mock() },
+  shoppingListItem: { findFirst: mock(), findMany: mock(), create: mock(), update: mock(), updateMany: mock(), deleteMany: mock() },
   $transaction: mock(async (operation: unknown) => typeof operation === "function"
     ? operation(prisma)
     : Promise.all(operation as Promise<unknown>[])),
@@ -180,10 +180,10 @@ describe("pantry unit integrity", () => {
   });
 });
 
-type Item = { id: string; ingredientName: string; quantity: number; unit: string; unitId: string | null; source: "AUTO" | "MANUAL"; status: "BOUGHT" | "PENDING" | "SKIPPED" };
+type Item = { id: string; ingredientName: string; quantity: number | null; unit: string; unitId: string | null; source: "AUTO" | "MANUAL"; status: "BOUGHT" | "PENDING" | "SKIPPED" };
 const entryFields = { id: "entry", recipeId: "recipe", recipeRevisionId: null, date: new Date("2030-04-03"), mealType: "DINNER" };
 let items: Item[];
-let ingredients: Array<{ name: string; quantity: number; unit: string; unitId?: string }>;
+let ingredients: Array<{ name: string; quantity: number | null; unit: string; unitId?: string }>;
 function generateList() {
   return generateShoppingListForWeek({ householdId: "reader-household", userId: "reader", weekStart: new Date("2030-04-01") });
 }
@@ -233,6 +233,17 @@ describe("shopping list refresh", () => {
     expect(items).toEqual(first);
   });
 
+  test("repeated refreshes preserve one unknown-quantity item and its bought state", async () => {
+    ingredients = [{ name: "Rice", quantity: 100, unit: "g" }, { name: "Rice", quantity: null, unit: "g" }];
+    await generateList();
+    expect(items.filter(item => item.source === "AUTO")).toEqual([
+      { id: "rice", ingredientName: "Rice", quantity: null, unit: "g", unitId: "metric-gram", source: "AUTO", status: "BOUGHT" },
+    ]);
+    const first = structuredClone(items);
+    await generateList();
+    expect(items).toEqual(first);
+  });
+
   test("an empty plan removes generated items and preserves manual additions", async () => {
     ingredients = [];
     await generateList();
@@ -272,6 +283,23 @@ describe("selected shopping week", () => {
     prisma.shoppingList.upsert.mockResolvedValue({ id: "future-list" });
     prisma.shoppingListItem.findMany.mockResolvedValue([]);
     prisma.pantryItem.findMany.mockResolvedValue([]);
+  });
+
+  test("shopping edits preserve stored units and check household ownership before updating", async () => {
+    prisma.shoppingList.findFirst.mockResolvedValue({ id: "future-list", items: [{ id: "milk", ingredientName: "Milk", quantity: 1, unit: "cup", unitId: "us-cup", status: "PENDING", source: "MANUAL" }] });
+    prisma.shoppingListItem.findFirst.mockResolvedValue({ unitId: "us-cup" });
+    const page = await ShoppingListPage({ searchParams: Promise.resolve({ list: "standalone" }) });
+    const form = elements(page).find(element => element.props.className === "shopping-edit-row")!;
+    const action = form.props.action as (data: FormData) => Promise<void>;
+    const data = new FormData();
+    data.set("itemId", "milk"); data.set("ingredientName", "Whole milk"); data.set("quantity", "2"); data.set("unit", "cups");
+    await expect(action(data)).rejects.toThrow("NEXT_REDIRECT");
+    expect(prisma.shoppingListItem.findFirst.mock.calls[0][0].where).toEqual({ id: "milk", shoppingList: { householdId: "reader-household" } });
+    expect(prisma.shoppingListItem.updateMany.mock.calls[0][0].data).toMatchObject({ quantity: 2, unit: "cup", unitId: "us-cup" });
+    prisma.shoppingListItem.updateMany.mockClear();
+    prisma.shoppingListItem.findFirst.mockResolvedValue(null);
+    await expect(action(data)).rejects.toThrow("Shopping item not found");
+    expect(prisma.shoppingListItem.updateMany).not.toHaveBeenCalled();
   });
 
   test("reads the selected week and links to adjacent weeks and its meal plan", async () => {

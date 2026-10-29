@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { buildAutoShoppingItems, subtractPantryFromShoppingItems } from "@/lib/shopping-list";
 
 describe("buildAutoShoppingItems", () => {
+  test("combines known and unknown quantities consistently in either order", () => {
+    const known = { name: "Flour", quantity: 100, unit: "g", unitId: "metric-gram" };
+    const unknown = { ...known, quantity: null };
+    for (const ingredients of [[known, unknown], [unknown, known]]) {
+      const items = buildAutoShoppingItems({ entries: [{ servingsOverride: null, recipe: { servings: 1, ingredients } }] });
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ ingredientName: "Flour", quantity: null, unitId: "metric-gram" });
+    }
+  });
   test("aggregates quantities across meal plan entries and servings overrides", () => {
     const items = buildAutoShoppingItems({
       entries: [
