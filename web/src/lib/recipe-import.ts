@@ -1,3 +1,5 @@
+import { normalizeUnitInput, type MeasurementSystem } from "./units";
+
 export type PicknicRecipeFile = {
   format: "picknic-recipe-v1";
   recipe: {
@@ -7,6 +9,19 @@ export type PicknicRecipeFile = {
     instructionComponents: Array<{ name: string; steps: Array<{ instruction: string; durationMinutes: number | null; advanceNotice: boolean }> }>;
   };
 };
+export function normalizeRecipeFileUnits(recipe: PicknicRecipeFile["recipe"], system: MeasurementSystem): PicknicRecipeFile["recipe"] {
+  return {
+    ...recipe,
+    ingredientComponents: recipe.ingredientComponents.map(component => ({
+      ...component,
+      ingredients: component.ingredients.map(ingredient => ({
+        ...ingredient,
+        ...normalizeUnitInput(ingredient.unit, system, ingredient.unitId),
+      })),
+    })),
+  };
+}
+
 const record = (x: unknown): x is Record<string, unknown> => Boolean(x && typeof x === "object" && !Array.isArray(x));
 const string = (x: unknown) => typeof x === "string";
 const numberOrNull = (x: unknown) => x === null || (typeof x === "number" && Number.isFinite(x));

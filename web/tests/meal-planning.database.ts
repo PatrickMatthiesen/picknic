@@ -117,9 +117,32 @@ test("saved shared recipes keep public ingredients after the author makes privat
   expect((await plan(recipe.id, 4, "2030-04-04")).status).toBe(400);
 }, 20_000);
 
+test("deleted household recipes remain searchable through saves and collections using their published snapshot", async () => {
+  const recipe = await prisma.recipe.create({ data: {
+    householdId: readerHouseholdId, createdById: readerId, title: "Retained household soup", visibility: "PUBLIC",
+    tags: ["retainedhousehold"], ingredients: { create: [{ name: "retained turnip", position: 1 }] },
+  } });
+  const published = await createRecipeRevision(prisma, recipe.id, readerId);
+  await prisma.savedRecipe.create({ data: { userId: readerId, recipeId: recipe.id, lastSeenRevisionId: published.id } });
+  const collection = await prisma.recipeCollection.create({ data: {
+    userId: readerId, name: "Retained household recipes", items: { create: [{ recipeId: recipe.id, position: 1 }] },
+  } });
+  await prisma.recipe.update({ where: { id: recipe.id }, data: {
+    deletedAt: new Date(), visibility: "PRIVATE", title: "Deleted live title", tags: ["deletedlivetag"],
+    ingredients: { deleteMany: {}, create: [{ name: "deleted live ingredient", position: 1 }] },
+  } });
+  for (const view of ["mine", "saved", "collections"] as const) {
+    const options = { userId: readerId, householdId: readerHouseholdId, view, collectionId: collection.id };
+    const result = await loadRecipeSearchPage({ ...options, q: "soup retainedhousehold turnip" });
+    expect(result.items.map(item => item.id)).toEqual([recipe.id]);
+    expect(result.items[0]?.title).toBe("Retained household soup");
+    expect((await loadRecipeSearchPage({ ...options, q: "deleted live" })).total).toBe(0);
+  }
+});
+
 test("search paginates older household recipes and uses only retained public snapshots for saved recipes", async () => {
   const recipe = await prisma.recipe.create({ data: {
-    householdId: authorHouseholdId, createdById: authorId, title: "Public Snapshot Tofu", servings: 2, visibility: "PUBLIC", tags: ["snapshotgreen"],
+    householdId: authorHouseholdId, createdById: authorId, title: "Public Snapshot Tofu", servings: 2, totalTimeMinutes: 25, visibility: "PUBLIC", tags: ["snapshotgreen"],
     ingredients: { create: { name: "Snapshot lentils", quantity: 100, unit: "g", unitId: "metric-gram", position: 1 } },
   } });
   const revision = await createRecipeRevision(prisma, recipe.id, authorId);
@@ -132,9 +155,20 @@ test("search paginates older household recipes and uses only retained public sna
   const oldMatch = await loadRecipeSearchPage({ userId: readerId, householdId: readerHouseholdId, view: "mine", q: "broccoli", page: "1", pageSize: 24 });
   expect(oldMatch.total).toBe(1);
   expect(oldMatch.items[0]?.title).toBe("Old broccoli target");
+  const firstPage = await loadRecipeSearchPage({ userId: readerId, householdId: readerHouseholdId, view: "mine", page: "1", pageSize: 24 });
+  const nextPage = await loadRecipeSearchPage({ userId: readerId, householdId: readerHouseholdId, view: "mine", page: "2", pageSize: 24 });
+  expect(firstPage.items).toHaveLength(24);
+  expect(nextPage.items).toHaveLength(24);
+  expect(nextPage.items.some(recipe => firstPage.items.some(first => first.id === recipe.id))).toBe(false);
+
   const publishedMatch = await loadRecipeSearchPage({ userId: readerId, householdId: readerHouseholdId, view: "saved", q: "tofu snapshotgreen lentils", page: "1", pageSize: 24 });
   expect(publishedMatch.total).toBe(1);
   expect(publishedMatch.items[0]?.title).toBe("Public Snapshot Tofu");
+  const filters = { userId: readerId, householdId: readerHouseholdId, view: "saved" as const, q: "tofu", diet: "SnapshotGreen" };
+  expect((await loadRecipeSearchPage({ ...filters, maxMinutes: "30" })).total).toBe(1);
+  expect((await loadRecipeSearchPage({ ...filters, maxMinutes: "15" })).total).toBe(0);
+  expect((await loadRecipeSearchPage({ ...filters, exclude: "lentils" })).total).toBe(0);
+
   for (const privateQuery of ["mango", "pistachio", "hiddeneditdiet"]) {
     const result = await loadRecipeSearchPage({ userId: readerId, householdId: readerHouseholdId, view: "saved", q: privateQuery, page: "1", pageSize: 24 });
     expect(result.total).toBe(0);
@@ -171,3 +205,21 @@ test("weekly templates retain recipes, notes and servings, and entries can move 
   const moved = await prisma.mealPlanEntry.findUniqueOrThrow({ where: { id: entry.id } });
   expect(moved).toMatchObject({ date: new Date("2030-05-09T00:00:00Z"), recipeRevisionId: revision.id, servingsOverride: 6 });
 }, 20_000);
+
+
+test("invitation reservations serialize concurrent sends and apply both account and household budgets", async () => {
+  const { reserveHouseholdInvitation } = await import("../src/lib/household-invitations");
+  const concurrent = await Promise.all([
+    reserveHouseholdInvitation(readerHouseholdId, readerId),
+    reserveHouseholdInvitation(readerHouseholdId, readerId),
+  ]);
+  expect(concurrent.filter(result => result.allowed)).toHaveLength(1);
+  expect(concurrent.filter(result => !result.allowed)).toHaveLength(1);
+  // The same account cannot evade cooldown by using a different household.
+  expect((await reserveHouseholdInvitation(authorHouseholdId, readerId)).allowed).toBe(false);
+  // Another owner in the same household shares its cooldown.
+  expect((await reserveHouseholdInvitation(readerHouseholdId, authorId)).allowed).toBe(false);
+  const records = await prisma.householdInvitationAttempt.findMany({ where: { requestedById: readerId } });
+  expect(records).toHaveLength(1);
+  expect(records[0]?.status).toBe("RESERVED");
+});

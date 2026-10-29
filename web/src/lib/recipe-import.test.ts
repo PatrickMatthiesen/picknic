@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractRecipeJsonLd, extractStructuredRecipeJsonLd, isPrivateImportAddress, safeRecipeUrl, validatePicknicRecipeFile } from "./recipe-import";
+import { extractRecipeJsonLd, extractStructuredRecipeJsonLd, isPrivateImportAddress, normalizeRecipeFileUnits, safeRecipeUrl, validatePicknicRecipeFile } from "./recipe-import";
 
 describe("safe recipe URL import", () => {
   test("accepts only credential-free HTTPS hostnames, not local or literal IP targets", () => {
@@ -36,6 +36,14 @@ describe("safe recipe URL import", () => {
 describe("Picknic recipe file validation", () => {
   const valid = { format: "picknic-recipe-v1", recipe: { title: "Cake", description: "", notes: "", servings: 4, totalTimeMinutes: 35, tags: ["dessert"], imageUrl: "", visibility: "PRIVATE", ingredientComponents: [{ name: "", ingredients: [{ name: "flour", quantity: 200, unit: "g", unitId: null, notes: "" }] }], instructionComponents: [{ name: "", steps: [{ instruction: "Bake", durationMinutes: 30, advanceNotice: false }] }] } };
   test("accepts the documented recipe shape", () => expect(validatePicknicRecipeFile(valid)).toBe(true));
+  test("file round trips preserve explicit measurements across authoring locales", () => {
+    for (const [unitId, system] of [["us-cup", "metric"], ["metric-cup", "us"]] as const) {
+      const file = JSON.parse(JSON.stringify({ ...valid, recipe: { ...valid.recipe, ingredientComponents: [{ name: "", ingredients: [{ name: "milk", quantity: 2, unit: "cup", unitId, notes: "" }] }] } }));
+      expect(validatePicknicRecipeFile(file)).toBe(true);
+      const imported = normalizeRecipeFileUnits(file.recipe, system);
+      expect(imported.ingredientComponents[0]!.ingredients[0]).toMatchObject({ quantity: 2, unit: "cup", unitId });
+    }
+  });
   test("rejects incompatible version and malformed nested fields before editor use", () => {
     expect(validatePicknicRecipeFile({ ...valid, format: "paprika" })).toBe(false);
     expect(validatePicknicRecipeFile({ ...valid, recipe: { ...valid.recipe, servings: 0 } })).toBe(false);

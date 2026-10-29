@@ -27,7 +27,7 @@ import { UnitCombobox } from "@/app/_components/unit-combobox";
 import { getSupportedRecipeImageUrl } from "@/lib/recipe-display";
 import { MAX_RECIPE_IMPORT_CHARACTERS } from "@/lib/ai-model";
 import { MAX_RECIPE_MINUTES } from "@/lib/recipe-input";
-import { validatePicknicRecipeFile, type PicknicRecipeFile } from "@/lib/recipe-import";
+import { normalizeRecipeFileUnits, validatePicknicRecipeFile, type PicknicRecipeFile } from "@/lib/recipe-import";
 import {
   inferMeasurementSystem,
   inferSourceMeasurementSystem,
@@ -398,10 +398,10 @@ export function RecipeEditorClient({
   }
 
   function applyImportedDraft(payload: PicknicRecipeFile) {
-    const incoming = payload.recipe;
+    const incoming = normalizeRecipeFileUnits(payload.recipe, authoringSystem);
     const imported: RecipeDraft = {
       ...incoming,
-      ingredientComponents: incoming.ingredientComponents.map((component) => ({ ...component, id: createId("ingredient-component"), ingredients: component.ingredients.map((ingredient) => ({ ...ingredient, id: createId("ingredient"), ...normalizeUnitInput(ingredient.unit, authoringSystem) })) })),
+      ingredientComponents: incoming.ingredientComponents.map((component) => ({ ...component, id: createId("ingredient-component"), ingredients: component.ingredients.map((ingredient) => ({ ...ingredient, id: createId("ingredient") })) })),
       instructionComponents: incoming.instructionComponents.map((component) => ({ ...component, id: createId("instruction-component"), steps: component.steps.map((step) => ({ ...step, id: createId("step") })) })),
     };
     setDraft(prepareDraft(imported));

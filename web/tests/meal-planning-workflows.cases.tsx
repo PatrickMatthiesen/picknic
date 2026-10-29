@@ -5,6 +5,7 @@ import { isValidElement, type ReactNode } from "react";
 // Run in a separate Bun process: module mocks must not replace the real auth
 // helpers used by the profile-linking tests in the main test suite.
 const prisma = {
+  $queryRaw: mock(async () => []),
   recipe: { findMany: mock(), findUniqueOrThrow: mock() },
   recipeRevision: { findFirst: mock(), findUnique: mock(), findMany: mock(), create: mock() },
   mealPlan: { findUnique: mock(), upsert: mock() },

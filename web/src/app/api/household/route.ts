@@ -4,6 +4,7 @@ import { refreshSession } from "@workos-inc/authkit-nextjs";
 import { MembershipRole } from "@prisma/client";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
+import { reserveHouseholdInvitation } from "@/lib/household-invitations";
 import { canEnableHouseholdSharing, canRemoveOrganizationMember, householdManagementError } from "@/lib/household-access";
 
 function workosClient() {
@@ -47,10 +48,21 @@ export async function POST(request: Request) {
   const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   if (result.household.members.some((member) => member.user.email.toLowerCase() === email)) return NextResponse.json({ error: "That person is already in this household." }, { status: 409 });
+  let attemptId: string | undefined;
   try {
+    const reservation = await reserveHouseholdInvitation(result.household.id, result.auth.userId);
+    if (!reservation.allowed) return NextResponse.json({ error: "Invitation limit reached. Wait before sending another invitation." }, { status: 429, headers: { "Retry-After": String(reservation.retryAfter) } });
+    attemptId = reservation.attemptId;
+    const invitations = await workos.userManagement.listInvitations({ organizationId: result.household.workosOrganizationId!, email, limit: 100 });
+    if (invitations.data.some(invitation => invitation.state === "pending" && invitation.email.toLowerCase() === email)) {
+      await prisma.householdInvitationAttempt.update({ where: { id: attemptId }, data: { status: "DUPLICATE" } });
+      return NextResponse.json({ error: "That person already has a pending invitation." }, { status: 409 });
+    }
     const invitation = await workos.userManagement.sendInvitation({ email, organizationId: result.household.workosOrganizationId!, inviterUserId: result.auth.workosUserId, expiresInDays: 7 });
+    await prisma.householdInvitationAttempt.update({ where: { id: attemptId }, data: { status: "SENT", workosInvitationId: invitation.id } });
     return NextResponse.json({ invitation: { id: invitation.id, email: invitation.email, expiresAt: invitation.expiresAt } }, { status: 201 });
   } catch (error) {
+    if (attemptId) await prisma.householdInvitationAttempt.update({ where: { id: attemptId }, data: { status: "FAILED" } }).catch(() => {});
     console.error("WorkOS household invitation failed.", error);
     return NextResponse.json({ error: "WorkOS could not send that invitation." }, { status: 502 });
   }
