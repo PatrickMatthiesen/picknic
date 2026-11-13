@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directories:
+      - /
+      - /web
+    schedule:
+      interval: weekly
+    groups:
+      bun-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+# Major updates remain separate PRs for manual review.
+# apphost/apphost.cs uses pinned file-based Aspire directives, not a NuGet project.
