@@ -4,25 +4,7 @@ on:
   push:
     branches:
       - "main"
-    paths:
-      - "web/**"
-      - "apphost/**"
-      - ".github/workflows/**"
-      - ".bun-version"
-      - "package.json"
-      - "aspire.config.json"
-      - "apphost.run.json"
-      - "README.md"
   pull_request:
-    paths:
-      - "web/**"
-      - "apphost/**"
-      - ".github/workflows/**"
-      - ".bun-version"
-      - "package.json"
-      - "aspire.config.json"
-      - "apphost.run.json"
-      - "README.md"
 
 permissions:
   contents: read
