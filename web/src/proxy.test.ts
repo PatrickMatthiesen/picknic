@@ -4,7 +4,7 @@ import {
   isUnauthenticatedApiRequest,
   isUnauthenticatedProtectedPage,
   unauthorizedApiResponse,
-} from "@/proxy";
+} from "@/lib/proxy-authorization";
 
 const TEST_APP_ORIGIN = process.env.PICKNIC_TEST_APP_ORIGIN ?? "https://picknic.test";
 

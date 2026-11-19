@@ -1,6 +1,6 @@
 {
     "private": true,
-    "packageManager": "bun@1.3.7",
+    "packageManager": "bun@1.4.5",
     "scripts": {
         "dev": "aspire start",
         "stop": "aspire stop",
