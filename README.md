@@ -6,7 +6,7 @@ Picknic is a household meal-planning app for recipes, weekly meal plans, pantry 
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) or another running Docker-compatible engine
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Bun 1.3.7](https://bun.sh/)
+- [Bun 1.4.5](https://bun.sh/)
 - [Node.js 22.11 or newer](https://nodejs.org/) for the pinned WorkOS CLI
 - The Aspire CLI using the daily package feed.
 - Network access to WorkOS for local authentication
