@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { getAiRecipeImportStatus } from "@/lib/ai-config";
 import { AppNav } from "@/app/_components/app-nav";
+import { prisma } from "@/lib/prisma";
+import { normalizeParsedPhotoRecipeDraft } from "@/lib/recipe-parser";
 import { RecipeEditorClient } from "./recipe-editor-client";
 
-export default async function NewRecipePage() {
+export default async function NewRecipePage({ searchParams }: { searchParams: Promise<{ capture?: string }> }) {
   const { userId, organizationId } = await requireAppAuthContext();
   const membership = await resolveActiveMembership(userId, organizationId);
 
@@ -25,6 +28,36 @@ export default async function NewRecipePage() {
     );
   }
 
-  const aiRecipeImport = await getAiRecipeImportStatus();
-  return <main className="app-theme-page app-shell recipe-authoring-shell"><AppNav currentPath="/recipes" /><RecipeEditorClient aiRecipeImportEnabled={aiRecipeImport.available} aiRecipeImportModel={aiRecipeImport.model} aiRecipeImportModels={aiRecipeImport.models} /></main>;
+  const { capture: captureId } = await searchParams;
+  const capture = typeof captureId === "string" ? await prisma.recipeCapture.findFirst({
+    where: { id: captureId, userId, householdId: membership.householdId, status: "READY" },
+    select: {
+      id: true,
+      draft: true,
+      warnings: true,
+      savedRecipeId: true,
+      photos: { select: { id: true }, orderBy: { position: "asc" } },
+    },
+  }) : null;
+  if (capture?.savedRecipeId) redirect(`/recipes/${capture.savedRecipeId}`);
+  if (captureId && !capture?.draft) redirect("/recipes/captures");
+
+  const aiRecipeImport = capture ? null : await getAiRecipeImportStatus();
+  return (
+    <main className="app-theme-page app-shell recipe-authoring-shell">
+      <AppNav currentPath="/recipes" />
+      <RecipeEditorClient
+        aiRecipeImportEnabled={aiRecipeImport?.available}
+        aiRecipeImportModel={aiRecipeImport?.model}
+        aiRecipeImportModels={aiRecipeImport?.models}
+        key={capture?.id ?? "new"}
+        photoCapture={capture?.draft ? {
+          id: capture.id,
+          draft: normalizeParsedPhotoRecipeDraft(capture.draft),
+          warnings: capture.warnings,
+          photoIds: capture.photos.map((photo) => photo.id),
+        } : undefined}
+      />
+    </main>
+  );
 }

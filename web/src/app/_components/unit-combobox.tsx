@@ -36,12 +36,14 @@ export function UnitCombobox({
   label,
   onChange,
   preferredSystem,
+  rememberRecentUnits = true,
   unitId,
   value,
 }: {
   label: string;
   onChange: (value: UnitValue) => void;
   preferredSystem: MeasurementSystem;
+  rememberRecentUnits?: boolean;
   unitId: string | null;
   value: string | null;
 }) {
@@ -85,11 +87,11 @@ export function UnitCombobox({
   }, []);
 
   const openMenu = useCallback(() => {
-    setRecentUnitIds(readRecentUnits());
+    if (rememberRecentUnits) setRecentUnitIds(readRecentUnits());
     setActiveIndex(0);
     setIsOpen(true);
     requestAnimationFrame(positionPopover);
-  }, [positionPopover]);
+  }, [positionPopover, rememberRecentUnits]);
 
   const closeMenu = useCallback(() => setIsOpen(false), []);
 
@@ -121,7 +123,7 @@ export function UnitCombobox({
   function selectUnit(unit: UnitDefinition) {
     setDraftValue(unit.symbol);
     onChange({ unit: unit.symbol, unitId: unit.id });
-    setRecentUnitIds(writeRecentUnit(unit.id));
+    if (rememberRecentUnits) setRecentUnitIds(writeRecentUnit(unit.id));
     closeMenu();
     requestAnimationFrame(() => inputRef.current?.focus());
   }
