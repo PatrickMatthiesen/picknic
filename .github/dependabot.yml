@@ -9,6 +9,7 @@ updates:
     groups:
       bun-minor-patch:
         patterns: ['*']
+        exclude-patterns: ['@opentelemetry/*']
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
