@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AppNav } from "@/app/_components/app-nav";
+import "./cook.css";
 
 export default function CookLayout({ children }: { children: ReactNode }) {
   return (

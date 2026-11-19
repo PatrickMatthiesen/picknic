@@ -1,0 +1,66 @@
+.planner-action,
+.planner-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  font-size: .875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.planner-action { padding-inline: 13px; }
+.planner-back { color: var(--primary-hover); }
+.planner-back:hover { text-decoration: underline; }
+.planner-week-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.planner-week-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.planner-week-nav a,
+.planner-week-options > summary { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; border-radius: var(--control-radius); padding-inline: 10px; color: var(--ink); font-size: .875rem; text-decoration: none; }
+.planner-week-nav a:hover,
+.planner-week-options > summary:hover,
+.planner-week-options[open] > summary { background: var(--surface-subtle); }
+.planner-week-options { position: relative; }
+.planner-week-options > summary { list-style: none; cursor: pointer; color: var(--muted); }
+.planner-week-options > summary::-webkit-details-marker { display: none; }
+.planner-settings-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: var(--z-dropdown); display: grid; gap: 14px; width: min(19rem, calc(100vw - 32px)); padding: 14px; border: 1px solid var(--divider); border-radius: var(--panel-radius); background: var(--surface); box-shadow: 0 10px 28px rgb(0 0 0 / .18); }
+.planner-settings-panel form { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; }
+.planner-settings-panel label { display: grid; flex: 1 1 100%; gap: 4px; font-size: .8rem; overflow-wrap: anywhere; }
+.planner-settings-panel input:not([type="hidden"]),
+.planner-settings-panel select { width: 100%; min-width: 0; padding-inline: 8px; }
+.week-table.planner-days { align-items: stretch; gap: 0; border-block: 1px solid var(--divider); }
+.planner-days .week-day { display: flex; flex-direction: column; border-inline-end: 1px solid var(--divider); border-radius: 0; background: transparent; }
+.planner-days .week-day:last-child { border-inline-end: 0; }
+.planner-days .week-day > header { border-radius: 0; }
+.planner-days .week-day.is-selected > header { color: var(--primary-hover); box-shadow: inset 0 2px var(--primary); }
+.planner-days .week-day.is-selected { box-shadow: none; }
+.planner-days .add-meal-menu { margin-top: auto; }
+.planner-days .add-meal-menu > summary { font-size: .82rem; }
+.planner-empty-day { margin: 8px 0 14px; color: var(--muted); font-size: .82rem; }
+.planner-entries { margin: 0; padding: 0; list-style: none; }
+.planner-entry + .planner-entry { border-top: 1px solid var(--divider); padding-top: 10px; }
+.planner-entry-label, .planner-entry-meta { color: var(--muted); font-size: .72rem; }
+.planner-entry-label { margin-bottom: 5px; }
+.planner-entry-recipe { display: grid; gap: 8px; color: var(--ink); font-size: .9rem; font-weight: 650; line-height: 1.25; text-decoration: none; overflow-wrap: anywhere; }
+.planner-entry-recipe:hover { text-decoration: underline; }
+.planner-entry-recipe img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--control-radius); }
+.planner-entry-meta { margin-top: 4px; }
+.planner-entry-note { display: grid; gap: 3px; font-size: .85rem; overflow-wrap: anywhere; }
+.planner-entry-note span { color: var(--muted); }
+.planner-entry-options > summary { min-height: 40px; padding-block: 10px; color: var(--primary-hover); font-size: .75rem; cursor: pointer; }
+.planner-entry-tools { display: grid; gap: 4px; }
+.planner-entry-tools .planned-servings { display: grid; padding: 0; }
+.planner-entry-tools .planned-servings label { align-items: start; flex-direction: column; }
+.planner-entry-tools .planned-servings input[type="date"] { width: 100%; min-width: 0; }
+.planner-remove { min-height: 44px; color: var(--danger); font-size: .75rem; cursor: pointer; }
+.planner-remove:hover { text-decoration: underline; }
+.recipe-tray .recipe-query { margin-top: 0; }
+.recipe-tile-actions form:first-child button { display: inline-flex; align-items: center; min-height: 42px; font-weight: 600; }
+
+@media (max-width: 1180px) {
+  .planner-days .week-day:nth-child(4n) { border-inline-end: 0; }
+  .planner-days .week-day:nth-child(n+5) { border-top: 1px solid var(--divider); }
+}
+@media (max-width: 760px) {
+  .planner-days .week-day:nth-child(2n) { border-inline-end: 0; }
+  .planner-days .week-day:nth-child(n+3) { border-top: 1px solid var(--divider); }
+  .planner-days .week-day:nth-child(2n+1):not(:last-child) { border-inline-end: 1px solid var(--divider); }
+}

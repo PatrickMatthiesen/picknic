@@ -1,9 +1,10 @@
 import { MealEntryKind, MealType, Prisma, RecipeVisibility } from "@prisma/client";
-import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Plus, Search, ShoppingBasket, Trash2 } from "lucide-react";
+import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Plus, ShoppingBasket } from "lucide-react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { RecipeSearchForm } from "@/app/_components/recipe-search-form";
 import { RecipeImage } from "@/app/_components/recipe-image";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { addUtcDays, getDateKey, getWeekStartUtc, MAX_PLANNED_SERVINGS, parseDateKey, parsePlannedServings, toUtcDate } from "@/lib/meal-plan";
@@ -11,13 +12,15 @@ import { prisma } from "@/lib/prisma";
 import { formatMealType } from "@/lib/recipe-display";
 import { ensureRecipeRevision, getPlanningRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 import { loadRecipeSearchPage } from "@/lib/recipe-search-service";
+import { readSearchFilters, type RecipeSearchParams } from "@/lib/recipe-search";
+import "./planner.css";
 
 const OPTIONAL_MEAL_TYPES = [MealType.DINNER, MealType.BREAKFAST, MealType.BRUNCH, MealType.LUNCH, MealType.SNACK, MealType.OTHER];
 const RECIPE_VIEWS = ["all", "saved", "collections", "discover"] as const;
 type RecipeView = (typeof RECIPE_VIEWS)[number];
 
 type PageProps = {
-  searchParams: Promise<{ week?: string; day?: string; meal?: string; view?: string; q?: string; page?: string; maxMinutes?: string; diet?: string; exclude?: string }>;
+  searchParams: Promise<RecipeSearchParams & { week?: string; day?: string; meal?: string; view?: string; pick?: string; page?: string }>;
 };
 
 function queryString(values: Record<string, string | undefined>) {
@@ -51,12 +54,11 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     return <main className="app-theme-page grid min-h-screen place-items-center p-6">No household is connected to this account.</main>;
   }
 
-  const requestedWeek = parseDateKey(search.week);
-  const weekStart = getWeekStartUtc(requestedWeek ?? new Date());
+  const selectedDate = parseDateKey(search.day);
+  const weekStart = getWeekStartUtc(parseDateKey(search.week) ?? selectedDate ?? new Date());
   const weekEnd = addUtcDays(weekStart, 6);
   const days = Array.from({ length: 7 }, (_, index) => addUtcDays(weekStart, index));
   const todayKey = getDateKey(new Date());
-  const selectedDate = parseDateKey(search.day);
   const selectedDay = selectedDate && selectedDate >= weekStart && selectedDate <= weekEnd
     ? selectedDate
     : days.find((day) => getDateKey(day) === todayKey) ?? weekStart;
@@ -256,20 +258,98 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     redirect(returnTo);
   }
 
-  const maxMinutes = search.maxMinutes;
-  const diet = search.diet;
-  const exclude = search.exclude;
-  const [mealPlan, recipePage, templates] = await Promise.all([
+  const { maxMinutes, diet, exclude } = readSearchFilters(search);
+  const filterParams = { q: query || undefined, maxMinutes, diet, exclude };
+  const pickerOpen = search.pick === "1" || (search.pick !== "0" && Boolean(search.meal || query || maxMinutes || diet || exclude));
+  const pickerHref = (day: string, meal: MealType, source = view, page?: string) =>
+    `/planner?${queryString({ week: weekKey, day, meal, view: source, pick: "1", ...filterParams, page })}`;
+  const weekHref = `/planner?${queryString({ week: weekKey, day: selectedDayKey, view, pick: "0", ...filterParams })}`;
+  const dateLabel = (date: Date) => date.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
+
+  if (pickerOpen) {
+    const recipePage = await loadRecipeSearchPage({
+      userId, householdId: membership.householdId, view, q: query, maxMinutes, diet, exclude, page: search.page, pageSize: 18,
+    });
+    const visibleRecipes = recipePage.items;
+    return (
+      <AppPageShell
+        currentPath="/planner"
+        title={`Pick a recipe for ${formatMealType(selectedMealType).toLowerCase()}`}
+        subtitle={selectedDay.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })}
+        eyebrow={<Link className="planner-back" href={weekHref}><ArrowLeft aria-hidden="true" size={16} /> Back to week</Link>}
+      >
+        <section className="recipe-tray" aria-label="Recipe choices">
+          <RecipeSearchForm query={query} maxMinutes={maxMinutes} diet={diet} exclude={exclude}>
+            <input name="pick" type="hidden" value="1" />
+            <input name="week" type="hidden" value={weekKey} />
+            <input name="day" type="hidden" value={selectedDayKey} />
+            <input name="meal" type="hidden" value={selectedMealType} />
+            <input name="view" type="hidden" value={view} />
+          </RecipeSearchForm>
+          <nav className="recipe-tabs" aria-label="Recipe source">
+            {RECIPE_VIEWS.map((item) => (
+              <Link aria-current={item === view ? "page" : undefined} className={item === view ? "is-active" : undefined} href={pickerHref(selectedDayKey, selectedMealType, item)} key={item}>
+                {item === "all" ? "All recipes" : item.charAt(0).toUpperCase() + item.slice(1)}
+              </Link>
+            ))}
+          </nav>
+          {visibleRecipes.length === 0 ? (
+            <div className="recipe-tray-empty">
+              <p>{query || maxMinutes || diet || exclude ? "No recipes match your search." : "No recipes in this view yet."}</p>
+              {query || maxMinutes || diet || exclude ? <Link className="recipe-empty-action" href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, pick: "1", view })}`}>Clear search and filters</Link> : null}
+              <Link className="app-theme-primary-button recipe-empty-action px-4 py-2 text-sm" href="/recipes/new">
+                <Plus aria-hidden="true" size={16} strokeWidth={2} />
+                <span>Add recipe</span>
+              </Link>
+            </div>
+          ) : (
+            <div className="recipe-tray-grid">
+              {visibleRecipes.map((recipe) => (
+                <article className="recipe-tile" key={recipe.id}>
+                  <RecipeImage alt="" height={128} recipe={recipe} width={192} />
+                  <div>
+                    <Link href={`/recipes/${recipe.id}`}>{recipe.title}</Link>
+                    <p>{recipe.servings} servings</p>
+                  </div>
+                  <div className="recipe-tile-actions">
+                    <form action={addEntry}>
+                      <input name="recipeId" type="hidden" value={recipe.id} />
+                      <input name="date" type="hidden" value={selectedDayKey} />
+                      <input name="mealType" type="hidden" value={selectedMealType} />
+                      <input name="returnTo" type="hidden" value={weekHref} />
+                      <button aria-label={`Add ${recipe.title} to ${formatMealType(selectedMealType).toLowerCase()}`} className="app-theme-secondary-button" type="submit">Add</button>
+                    </form>
+                    <form action={toggleSavedRecipe}>
+                      <input name="recipeId" type="hidden" value={recipe.id} />
+                      <input name="returnTo" type="hidden" value={pickerHref(selectedDayKey, selectedMealType, view, search.page)} />
+                      <button aria-label={recipe.saves.length ? `Unsave ${recipe.title}` : `Save ${recipe.title}`} className={recipe.saves.length ? "is-saved" : undefined} type="submit">
+                        <Bookmark fill={recipe.saves.length ? "currentColor" : "none"} size={17} />
+                      </button>
+                    </form>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {recipePage.pageCount > 1 ? <nav aria-label="Recipe result pages" className="recipe-tabs">
+            {recipePage.page > 1 ? <Link href={pickerHref(selectedDayKey, selectedMealType, view, String(recipePage.page - 1))}>Previous recipes</Link> : null}
+            <span>Page {recipePage.page} of {recipePage.pageCount} · {recipePage.total} recipes</span>
+            {recipePage.page < recipePage.pageCount ? <Link href={pickerHref(selectedDayKey, selectedMealType, view, String(recipePage.page + 1))}>More recipes</Link> : null}
+          </nav> : null}
+        </section>
+      </AppPageShell>
+    );
+  }
+
+  const [mealPlan, templates] = await Promise.all([
     prisma.mealPlan.findUnique({
       where: { householdId_weekStart: { householdId: membership.householdId, weekStart } },
       include: { entries: { orderBy: [{ date: "asc" }, { mealType: "asc" }], include: { recipe: true, recipeRevision: true } } },
     }),
-    loadRecipeSearchPage({ userId, householdId: membership.householdId, view, q: query, maxMinutes, diet, exclude, page: search.page, pageSize: 18 }),
-    prisma.mealPlanTemplate.findMany({ where: { householdId: membership.householdId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.mealPlanTemplate.findMany({
+      where: { householdId: membership.householdId }, orderBy: { name: "asc" }, select: { id: true, name: true },
+    }),
   ]);
-
-  const returnTo = `/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined, maxMinutes, diet, exclude })}`;
-  const visibleRecipes = recipePage.items;
   const entriesByDay = new Map<string, NonNullable<typeof mealPlan>["entries"]>();
   for (const entry of mealPlan?.entries ?? []) {
     const key = getDateKey(entry.date);
@@ -277,168 +357,129 @@ export default async function PlannerPage({ searchParams }: PageProps) {
   }
   const previousWeek = getDateKey(addUtcDays(weekStart, -7));
   const nextWeek = getDateKey(addUtcDays(weekStart, 7));
+  const noteLabels = {
+    [MealEntryKind.NO_PLAN]: "Open day",
+    [MealEntryKind.EATING_OUT]: "Eating out",
+    [MealEntryKind.LEFTOVERS]: "Leftovers",
+    [MealEntryKind.NOTE]: "Note",
+  } as const;
 
   return (
     <AppPageShell
       currentPath="/planner"
-      title="This week"
-      subtitle={`${weekStart.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })} – ${weekEnd.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}`}
-      headerChildren={
-        <div className="week-controls">
-          <Link aria-label="Previous week" href={`/planner?week=${previousWeek}`}><ChevronLeft size={18} /></Link>
-          <Link className="today-link" href="/planner"><CalendarDays size={17} /> Today</Link>
-          <Link aria-label="Next week" href={`/planner?week=${nextWeek}`}><ChevronRight size={18} /></Link>
-          <Link className="today-link" href={`/shopping-list?week=${weekKey}`}><ShoppingBasket size={17} /> Shop this week</Link>
-          <form action={copyPreviousWeek}><input name="week" type="hidden" value={weekKey} /><button className="today-link" type="submit">Copy last week</button></form>
-          <details className="weekly-plan-menu"><summary>Weekly plans</summary><form action={saveTemplate}><input name="week" type="hidden" value={weekKey} /><input aria-label="Weekly plan name" name="name" placeholder="Name this week" required /><button type="submit">Save</button></form><form action={applyTemplate}><input name="week" type="hidden" value={weekKey} /><select aria-label="Saved weekly plan" name="templateId" required><option value="">Choose saved plan</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><button type="submit">Append plan</button></form></details>
-        </div>
-      }
+      title="Plan your week"
+      subtitle={`${dateLabel(weekStart)} – ${dateLabel(weekEnd)}`}
+      headerChildren={<>
+        <Link aria-label={`Plan a meal for ${selectedDay.toLocaleDateString("en", { weekday: "long", timeZone: "UTC" })}, ${dateLabel(selectedDay)}`} className="app-theme-primary-button planner-action" href={pickerHref(selectedDayKey, MealType.DINNER)}>
+          <Plus aria-hidden="true" size={17} /> Plan a meal
+        </Link>
+        <Link className="app-theme-secondary-button planner-action" href={`/shopping-list?week=${weekKey}`}>
+          <ShoppingBasket aria-hidden="true" size={17} /> Shopping list
+        </Link>
+      </>}
     >
-      <section className="week-table" aria-label="Weekly meal plan">
+      <div className="planner-week-toolbar">
+        <nav className="planner-week-nav" aria-label="Week">
+          <Link aria-label="Previous week" href={`/planner?week=${previousWeek}`}><ChevronLeft aria-hidden="true" size={20} /></Link>
+          <Link href="/planner">This week</Link>
+          <Link aria-label="Next week" href={`/planner?week=${nextWeek}`}><ChevronRight aria-hidden="true" size={20} /></Link>
+        </nav>
+        <details className="planner-week-options">
+          <summary>Week options</summary>
+          <div className="planner-settings-panel">
+            <form action={copyPreviousWeek}>
+              <input name="week" type="hidden" value={weekKey} />
+              <button className="app-theme-secondary-button planner-action" type="submit">Copy last week</button>
+            </form>
+            <form action={saveTemplate}>
+              <input name="week" type="hidden" value={weekKey} />
+              <label>Save as a weekly plan<input className="app-theme-input" name="name" required /></label>
+              <button className="app-theme-secondary-button planner-action" type="submit">Save</button>
+            </form>
+            <form action={applyTemplate}>
+              <input name="week" type="hidden" value={weekKey} />
+              <label>Use a saved plan
+                <select className="app-theme-input" name="templateId" required>
+                  <option value="">Choose a plan</option>
+                  {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                </select>
+              </label>
+              <button className="app-theme-secondary-button planner-action" type="submit">Append plan</button>
+            </form>
+          </div>
+        </details>
+      </div>
+
+      <section className="week-table planner-days" aria-label="Weekly meal plan">
         {days.map((day) => {
           const dateKey = getDateKey(day);
           const entries = entriesByDay.get(dateKey) ?? [];
-          const dinner = entries.find((entry) => entry.mealType === MealType.DINNER && entry.recipeId) ?? entries.find((entry) => entry.mealType === MealType.DINNER);
-          const extras = entries.filter((entry) => entry.id !== dinner?.id);
-          const dinnerRecipe = dinner?.recipe ? getPlannedRecipe({ ...dinner, recipe: dinner.recipe }) : null;
-          const isToday = dateKey === todayKey;
-          const isSelected = dateKey === selectedDayKey;
-
+          const dayName = day.toLocaleDateString("en", { weekday: "long", timeZone: "UTC" });
+          const isSelected = Boolean(selectedDate && dateKey === selectedDayKey);
           return (
-            <article className={`week-day ${isToday ? "is-today" : ""} ${isSelected ? "is-selected" : ""}`} key={dateKey}>
+            <article aria-label={`${dayName}, ${dateLabel(day)}${isSelected ? ", selected" : ""}`} className={`week-day${dateKey === todayKey ? " is-today" : ""}${isSelected ? " is-selected" : ""}`} key={dateKey}>
               <header>
                 <span>{day.toLocaleDateString("en", { weekday: "short", timeZone: "UTC" })}</span>
                 <strong>{day.getUTCDate()}</strong>
               </header>
-              <div className="dinner-slot">
-                <span className="meal-label">Dinner</span>
-                {dinner && dinnerRecipe ? (
-                  <div className="planned-meal">
-                    <RecipeImage alt="" height={112} loading="eager" recipe={dinnerRecipe} width={168} />
-                    <span className="planned-badge">Planned</span>
-                    {dinner.recipe ? <Link href={`/recipes/${dinner.recipe.id}`}>{dinnerRecipe.title}</Link> : <span>{dinner.note ?? "No plan"}</span>}
-                    {dinner.recipe ? servingsControl(dinner, dinnerRecipe) : null}
-                    <details className="reschedule-meal"><summary>Reschedule</summary><form action={moveEntry} className="planned-servings"><input name="entryId" type="hidden" value={dinner.id} /><label>Move to<input aria-label={`Move ${dinnerRecipe.title} to date`} name="date" type="date" required /></label><button type="submit">Move</button></form></details>
-                    <form action={removeEntry} className="remove-planned-meal">
-                      <input name="entryId" type="hidden" value={dinner.id} />
-                      <input name="returnTo" type="hidden" value={returnTo} />
-                      <button aria-label={`Remove ${dinnerRecipe.title} from ${dateKey}`} type="submit"><Trash2 size={15} /></button>
-                    </form>
-                  </div>
-                ) : dinner ? (
-                  <div className="planned-meal planned-note"><span className="meal-label">{dinner.kind === MealEntryKind.NO_PLAN ? "Open day" : dinner.kind === MealEntryKind.EATING_OUT ? "Eating out" : dinner.kind === MealEntryKind.LEFTOVERS ? "Leftovers" : "Note"}</span><span>{dinner.note}</span><details className="reschedule-meal"><summary>Reschedule</summary><form action={moveEntry} className="planned-servings"><input name="entryId" type="hidden" value={dinner.id} /><label>Move to<input aria-label={`Move meal note for ${dateKey}`} name="date" type="date" required /></label><button type="submit">Move</button></form></details><form action={removeEntry} className="remove-planned-meal"><input name="entryId" type="hidden" value={dinner.id} /><input name="returnTo" type="hidden" value={returnTo} /><button aria-label="Remove meal note" type="submit"><Trash2 size={15} /></button></form></div>
-                ) : (
-                  <Link className="empty-meal" href={`/planner?${queryString({ week: weekKey, day: dateKey, meal: MealType.DINNER, view })}`}>
-                    <Plus size={18} />
-                    <span>Not planning</span>
-                    <small>Pick a recipe</small>
-                  </Link>
-                )}
-              </div>
-              {extras.length > 0 ? (
-                <div className="extra-meals">
-                  {extras.map((entry) => {
-                    const plannedRecipe = entry.recipe ? getPlannedRecipe({ ...entry, recipe: entry.recipe }) : null;
-                    return <div key={entry.id}>
-                      <span>{formatMealType(entry.mealType)}</span>
-                      {plannedRecipe && entry.recipe ? <Link href={`/recipes/${entry.recipe.id}`}>{plannedRecipe.title}</Link> : <span>{entry.note ?? "No plan"}</span>}
-                      {plannedRecipe ? servingsControl(entry, plannedRecipe) : null}
-                      {<details className="reschedule-meal"><summary>Reschedule</summary><form action={moveEntry} className="planned-servings"><input name="entryId" type="hidden" value={entry.id} /><label>Move to<input aria-label={`Move ${plannedRecipe?.title ?? entry.note ?? "meal"} to date`} name="date" type="date" required /></label><button type="submit">Move</button></form></details>}
-                      <form action={removeEntry} className="remove-planned-meal">
-                        <input name="entryId" type="hidden" value={entry.id} />
-                        <input name="returnTo" type="hidden" value={returnTo} />
-                        <button aria-label={`Remove ${plannedRecipe?.title ?? entry.note ?? "meal"}`} type="submit"><Trash2 size={14} /></button>
-                      </form>
-                    </div>;
+              {entries.length === 0 ? <p className="planner-empty-day">No meals planned</p> : (
+                <ul className="planner-entries">
+                  {entries.map((entry) => {
+                    const recipe = entry.recipe ? getPlannedRecipe({ ...entry, recipe: entry.recipe }) : null;
+                    const label = formatMealType(entry.mealType);
+                    const noteLabel = entry.kind === MealEntryKind.RECIPE ? "Recipe" : noteLabels[entry.kind];
+                    return (
+                      <li className="planner-entry" key={entry.id}>
+                        <p className="planner-entry-label">{label}</p>
+                        {recipe ? (
+                          <Link className="planner-entry-recipe" href={`/recipes/${recipe.id}`}>
+                            <RecipeImage alt="" height={112} recipe={recipe} width={168} />
+                            {recipe.title}
+                          </Link>
+                        ) : <p className="planner-entry-note"><strong>{noteLabel}</strong>{entry.note && <span>{entry.note}</span>}</p>}
+                        {recipe && <p className="planner-entry-meta">{entry.servingsOverride ?? recipe.servings} servings</p>}
+                        <details className="planner-entry-options">
+                          <summary aria-label={`Options for ${recipe?.title ?? noteLabel}, ${dayName} ${label.toLowerCase()}`}>Options</summary>
+                          <div className="planner-entry-tools">
+                            {recipe && <Link className="planner-back" href={`/cook?date=${dateKey}&entry=${entry.id}`}>Cook this meal</Link>}
+                            {recipe && servingsControl(entry, recipe)}
+                            <form action={moveEntry} className="planned-servings">
+                              <input name="entryId" type="hidden" value={entry.id} />
+                              <label>Move to<input name="date" type="date" required /></label>
+                              <button type="submit">Move</button>
+                            </form>
+                            <form action={removeEntry}>
+                              <input name="entryId" type="hidden" value={entry.id} />
+                              <input name="returnTo" type="hidden" value={weekHref} />
+                              <button className="planner-remove" type="submit">Remove from plan</button>
+                            </form>
+                          </div>
+                        </details>
+                      </li>
+                    );
                   })}
-                </div>
-              ) : null}
+                </ul>
+              )}
               <details className="add-meal-menu">
-                <summary><Plus size={15} /> Add another meal</summary>
-                <div>
-                  {OPTIONAL_MEAL_TYPES.map((type) => (
-                    <Link href={`/planner?${queryString({ week: weekKey, day: dateKey, meal: type, view })}`} key={type}>{formatMealType(type)}</Link>
-                  ))}
+                <summary aria-label={`Add to ${dayName}`}><Plus aria-hidden="true" size={15} /> Add meal</summary>
+                <div className="add-meal-options">
+                  <p>Pick a recipe for</p>
+                  <div className="add-meal-links">
+                    {OPTIONAL_MEAL_TYPES.map((type) => (
+                      <Link href={pickerHref(dateKey, type)} key={type}>{formatMealType(type)}</Link>
+                    ))}
+                  </div>
+                  <form action={addNote} className="meal-note-editor">
+                    <input name="date" type="hidden" value={dateKey} />
+                    <label>Plan type<select name="kind" defaultValue="LEFTOVERS"><option value="LEFTOVERS">Leftovers</option><option value="EATING_OUT">Eating out</option><option value="NOTE">Other note</option><option value="NO_PLAN">Leave open</option></select></label>
+                    <label>Note (optional)<input name="note" /></label>
+                    <button className="app-theme-primary-button" type="submit">Add to day</button>
+                  </form>
                 </div>
               </details>
-              <details className="meal-note-editor"><summary>Leftovers, eating out or note</summary><form action={addNote}>
-                <input name="date" type="hidden" value={dateKey} />
-                <select aria-label="Plan type" name="kind" defaultValue="LEFTOVERS"><option value="LEFTOVERS">Leftovers</option><option value="EATING_OUT">Eating out</option><option value="NOTE">Other note</option><option value="NO_PLAN">Leave open</option></select>
-                <input aria-label={`Meal note for ${dateKey}`} name="note" placeholder="Note (optional)" />
-                <button type="submit">Add</button>
-              </form></details>
             </article>
           );
         })}
-      </section>
-
-      <section className="recipe-tray" aria-labelledby="recipe-tray-title">
-        <div className="recipe-tray-toolbar">
-          <div>
-            <p className="app-theme-muted text-xs">Planning {formatMealType(selectedMealType).toLowerCase()} for {selectedDay.toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" })}</p>
-            <h2 id="recipe-tray-title">Find a recipe</h2>
-          </div>
-          <form className="recipe-search planner-search" method="get">
-            <input name="week" type="hidden" value={weekKey} />
-            <input name="day" type="hidden" value={selectedDayKey} />
-            <input name="meal" type="hidden" value={selectedMealType} />
-            <input name="view" type="hidden" value={view} />
-            <Search aria-hidden="true" size={17} />
-            <input defaultValue={query} name="q" placeholder="Title, ingredient or tag" aria-label="Search recipes, ingredients and tags" />
-            <input aria-label="Maximum cooking time in minutes" defaultValue={maxMinutes} name="maxMinutes" placeholder="Max min" type="number" min={1} />
-            <input aria-label="Diet tag" defaultValue={diet} name="diet" placeholder="Diet tag" />
-            <input aria-label="Exclude ingredients" defaultValue={exclude} name="exclude" placeholder="Exclude ingredients" /><button type="submit">Search</button>
-          </form>
-        </div>
-        <nav className="recipe-tabs" aria-label="Recipe source">
-          {RECIPE_VIEWS.map((item) => (
-            <Link className={item === view ? "is-active" : undefined} href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view: item, q: query || undefined, maxMinutes, diet, exclude })}`} key={item}>
-              {item === "all" ? "All recipes" : item.charAt(0).toUpperCase() + item.slice(1)}
-            </Link>
-          ))}
-        </nav>
-        {visibleRecipes.length === 0 ? (
-          <div className="recipe-tray-empty">
-            <p>No recipes match this view.</p>
-            <Link className="app-theme-primary-button recipe-empty-action px-4 py-2 text-sm" href="/recipes/new">
-              <Plus aria-hidden="true" size={16} strokeWidth={2} />
-              <span>Add recipe</span>
-            </Link>
-          </div>
-        ) : (
-          <div className="recipe-tray-grid">
-            {visibleRecipes.map((recipe) => (
-              <article className="recipe-tile" key={recipe.id}>
-                <RecipeImage alt="" height={128} recipe={recipe} width={192} />
-                <div>
-                  <Link href={`/recipes/${recipe.id}`}>{recipe.title}</Link>
-                  <p>{recipe.servings} servings</p>
-                </div>
-                <div className="recipe-tile-actions">
-                  <form action={addEntry}>
-                    <input name="recipeId" type="hidden" value={recipe.id} />
-                    <input name="date" type="hidden" value={selectedDayKey} />
-                    <input name="mealType" type="hidden" value={selectedMealType} />
-                    <input name="returnTo" type="hidden" value={returnTo} />
-                    <button className="app-theme-primary-button" type="submit">Plan</button>
-                  </form>
-                  <form action={toggleSavedRecipe}>
-                    <input name="recipeId" type="hidden" value={recipe.id} />
-                    <input name="returnTo" type="hidden" value={returnTo} />
-                    <button aria-label={recipe.saves.length ? `Unsave ${recipe.title}` : `Save ${recipe.title}`} className={recipe.saves.length ? "is-saved" : undefined} type="submit">
-                      <Bookmark fill={recipe.saves.length ? "currentColor" : "none"} size={17} />
-                    </button>
-                  </form>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-        {recipePage.pageCount > 1 ? <nav aria-label="Recipe result pages" className="recipe-tabs">
-          {recipePage.page > 1 ? <Link href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined, maxMinutes, diet, exclude, page: String(recipePage.page - 1) })}`}>Previous recipes</Link> : null}
-          <span>Page {recipePage.page} of {recipePage.pageCount} · {recipePage.total} recipes</span>
-          {recipePage.page < recipePage.pageCount ? <Link href={`/planner?${queryString({ week: weekKey, day: selectedDayKey, meal: selectedMealType, view, q: query || undefined, maxMinutes, diet, exclude, page: String(recipePage.page + 1) })}`}>More recipes</Link> : null}
-        </nav> : null}
       </section>
     </AppPageShell>
   );

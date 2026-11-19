@@ -54,6 +54,9 @@
     "sharp",
     "unrs-resolver"
   ],
+  "overrides": {
+    "effect": "3.22.1"
+  },
   "trustedDependencies": [
     "sharp",
     "unrs-resolver"

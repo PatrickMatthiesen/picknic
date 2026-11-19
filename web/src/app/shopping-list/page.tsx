@@ -1,6 +1,6 @@
 import { ShoppingItemSource, ShoppingItemStatus } from "@prisma/client";
 import Link from "next/link";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowUpRight, CalendarDays, Check, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, ShoppingBasket } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAppAuthContext, resolveActiveHouseholdId } from "@/lib/auth-context";
@@ -38,7 +38,9 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
   const weekStart = getWeekStartUtc(parseDateKey(search.week) ?? new Date());
   const weekKey = getDateKey(weekStart);
   const standaloneMode = search.list === "standalone";
-  const listHref = standaloneMode ? "/shopping-list?list=standalone" : `/shopping-list?week=${weekKey}`;
+  const weeklyHref = `/shopping-list?week=${weekKey}`;
+  const standaloneHref = `${weeklyHref}&list=standalone`;
+  const listHref = standaloneMode ? standaloneHref : weeklyHref;
 
   async function updateItem(formData: FormData) {
     "use server";
@@ -118,7 +120,6 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
     });
 
     revalidatePath("/shopping-list");
-    redirect(`${listHref}&saved=updated`);
   }
 
   async function addManualItem(formData: FormData) {
@@ -174,7 +175,7 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
     });
 
     revalidatePath("/shopping-list");
-    const destination = standaloneMode || !mealPlan ? "/shopping-list?list=standalone" : listHref;
+    const destination = standaloneMode || !mealPlan ? standaloneHref : listHref;
     redirect(`${destination}&saved=added`);
   }
 
@@ -190,86 +191,137 @@ export default async function ShoppingListPage({ searchParams }: PageProps) {
     return "Other";
   };
   const groupedItems = categories.map((category) => ({ category, items: (shoppingList?.items ?? []).filter((item) => categoryFor(item.ingredientName) === category) })).filter((group) => group.items.length);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+  const weekEnd = addUtcDays(weekStart, 6);
+  const weekLabel = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).formatRange(weekStart, weekEnd);
+  const items = shoppingList?.items ?? [];
+  const remaining = items.filter((item) => item.status === ShoppingItemStatus.PENDING).length;
+  const bought = items.filter((item) => item.status === ShoppingItemStatus.BOUGHT).length;
+  const planExists = !standaloneMode && Boolean(shoppingList || await prisma.mealPlan.findUnique({
+    where: { householdId_weekStart: { householdId, weekStart } },
+    select: { id: true },
+  }));
+  const hasStalePlan = !standaloneMode && Boolean(shoppingList?.isStale);
+  const planHref = `/planner?week=${weekKey}`;
 
   return (
     <AppPageShell
       currentPath="/shopping-list"
       title="Shopping list"
-      subtitle={standaloneMode ? "An independent list for anything you need." : `Week of ${weekKey} to ${getDateKey(weekEnd)}.`}
+      maxWidthClassName="max-w-5xl"
       headerChildren={
-        <div className="week-controls">
-          <Link aria-label="Previous week" href={`/shopping-list?week=${getDateKey(addUtcDays(weekStart, -7))}`}><ChevronLeft size={18} /></Link>
-          <Link className="today-link" href="/shopping-list"><CalendarDays size={17} /> Today</Link>
-          <Link aria-label="Next week" href={`/shopping-list?week=${getDateKey(addUtcDays(weekStart, 7))}`}><ChevronRight size={18} /></Link>
-          <Link className="today-link" href={`/planner?week=${weekKey}`}>View meal plan</Link>
-          <Link aria-current={standaloneMode ? "page" : undefined} className="today-link" href="/shopping-list?list=standalone">Standalone list</Link>
-          <Link aria-current={!standaloneMode ? "page" : undefined} className="today-link" href={`/shopping-list?week=${weekKey}`}>Weekly list</Link>
-        </div>
+        <nav className="shopping-modes" aria-label="Shopping list type">
+          <Link aria-current={!standaloneMode ? "page" : undefined} href={weeklyHref}>Weekly</Link>
+          <Link aria-current={standaloneMode ? "page" : undefined} href={standaloneHref}>Standalone</Link>
+        </nav>
       }
     >
-      {!standaloneMode && shoppingList?.isStale ? (
-        <p className="shopping-plan-notice" role="status">
-          Your meal plan may have changed since this list was generated. Refresh to update quantities;
-          checked items and manual additions are preserved.
-        </p>
-      ) : null}
-      {search.saved ? <p className="shopping-plan-notice" role="status">{search.saved === "added" ? "Item added to the list." : search.saved === "updated" ? "Item updated." : "Shopping list refreshed."}</p> : null}
-      <section className="app-theme-card shopping-tools rounded-lg p-3">
-        {!standaloneMode ? <p className="app-theme-muted text-sm">Items added before a meal plan exists open in Standalone shopping.</p> : null}
-        <form action={addManualItem} className="shopping-add-row">
-          <label className="sr-only" htmlFor="new-item">Add item</label>
-          <input className="app-theme-input rounded-lg px-3 py-2" id="new-item" name="ingredientName" placeholder="Add an item" required />
-          <label className="sr-only" htmlFor="new-quantity">Quantity</label>
-          <input className="app-theme-input rounded-lg px-3 py-2" id="new-quantity" min={0} name="quantity" placeholder="Qty" step="0.01" type="number" />
-          <label className="sr-only" htmlFor="new-unit">Unit</label>
-          <input className="app-theme-input rounded-lg px-3 py-2" id="new-unit" name="unit" placeholder="Unit" />
-          <button className="app-theme-secondary-button rounded-lg px-4 py-2 text-sm font-medium" type="submit">Add</button>
-        </form>
-        <form action={regenerateShoppingList} className="shopping-refresh-row">
-          {!standaloneMode ? <span className="app-theme-muted text-sm">Refresh planned recipe quantities. Bought and manual items stay.</span> : <span className="app-theme-muted text-sm">Items here are independent of the weekly plan.</span>}
-          {!standaloneMode ? (
-          <button className="app-theme-primary-button rounded-lg px-4 py-2 text-sm font-medium" type="submit">Generate or refresh</button>
-          ) : null}
-        </form>
-      </section>
+      {!standaloneMode && (
+        <div className="shopping-context">
+          <div className="shopping-week">
+            <CalendarDays aria-hidden="true" size={17} />
+            <span>{weekLabel}</span>
+            <nav aria-label="Shopping week">
+              <Link aria-label="Previous week" href={`/shopping-list?week=${getDateKey(addUtcDays(weekStart, -7))}`}><ChevronLeft aria-hidden="true" size={19} /></Link>
+              <Link className="shopping-current-week" href="/shopping-list">This week</Link>
+              <Link aria-label="Next week" href={`/shopping-list?week=${getDateKey(addUtcDays(weekStart, 7))}`}><ChevronRight aria-hidden="true" size={19} /></Link>
+            </nav>
+          </div>
+          <Link className="shopping-text-action" href={planHref}>Meal plan <ArrowUpRight aria-hidden="true" size={16} /></Link>
+        </div>
+      )}
+      {search.saved && <p className="shopping-feedback" role="status">{search.saved === "added" ? "Item added." : search.saved === "updated" ? "Item updated." : "List refreshed from your meal plan."}</p>}
+      <section className="shopping-checklist" aria-labelledby="shopping-checklist-title">
+        <header className="shopping-checklist-heading">
+          <div>
+            <h2 id="shopping-checklist-title">Groceries</h2>
+            {items.length > 0 && <p role="status" className="app-theme-muted">{remaining} to buy{bought > 0 ? ` · ${bought} bought` : ""}</p>}
+          </div>
+          <details className="shopping-add">
+            <summary className={`${standaloneMode && !items.length ? "app-theme-primary-button" : "app-theme-secondary-button"} shopping-action`}><Plus aria-hidden="true" size={18} /> Add item</summary>
+            <form action={addManualItem} className="shopping-item-fields">
+              <label>Item<input className="app-theme-input" name="ingredientName" placeholder="e.g. Apples" required /></label>
+              <label>Quantity<input className="app-theme-input" min={0} name="quantity" step="0.01" type="number" /></label>
+              <label>Unit<input className="app-theme-input" name="unit" placeholder="e.g. kg" /></label>
+              <button className="app-theme-primary-button shopping-action" type="submit">Add to list</button>
+              {!standaloneMode && !planExists && <p className="app-theme-muted">Until you plan this week, new items go to the standalone list.</p>}
+            </form>
+          </details>
+        </header>
 
-      <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Items</h2>
-          {!shoppingList || shoppingList.items.length === 0 ? (
-            <p className="app-theme-card app-theme-muted rounded-lg border-dashed p-5">
-              No shopping items yet. Add something here or generate from the selected week’s meal plan.
-            </p>
-          ) : (
-            groupedItems.map(({ category, items }) => <section className="shopping-category" key={category}><h3>{category}</h3>{items.map((item) => {
-              const nextStatus =
-                item.status === ShoppingItemStatus.BOUGHT ? ShoppingItemStatus.PENDING : ShoppingItemStatus.BOUGHT;
+        {hasStalePlan && (
+          <div className="shopping-refresh-inline">
+            <p className="app-theme-muted" role="status">Meal plan changed. Refresh to update quantities.</p>
+            <form action={regenerateShoppingList}>
+              <button className="shopping-text-action" type="submit"><RefreshCw aria-hidden="true" size={15} /> Refresh list</button>
+            </form>
+          </div>
+        )}
 
-              return (
-                <article className="app-theme-card shopping-row rounded-lg p-3" key={item.id}>
-                  <form action={updateItem} className="shopping-edit-row">
-                    <input name="itemId" type="hidden" value={item.id} />
-                    <label className="sr-only" htmlFor={`name-${item.id}`}>Item name</label>
-                    <input className="app-theme-input rounded-md px-2 py-2 text-sm" id={`name-${item.id}`} name="ingredientName" defaultValue={item.ingredientName} />
-                    <label className="sr-only" htmlFor={`qty-${item.id}`}>Quantity</label>
-                    <input className="app-theme-input rounded-md px-2 py-2 text-sm" id={`qty-${item.id}`} name="quantity" type="number" min="0" step="0.01" placeholder="Qty" defaultValue={item.quantity?.toString() ?? ""} />
-                    <label className="sr-only" htmlFor={`unit-${item.id}`}>Unit</label>
-                    <input className="app-theme-input rounded-md px-2 py-2 text-sm" id={`unit-${item.id}`} name="unit" placeholder="Unit" defaultValue={item.unit ?? ""} />
-                    <button className="app-theme-secondary-button rounded-md px-3 py-2 text-sm" type="submit">Save</button>
-                  </form>
-                  <div className="shopping-row-meta"><span>{item.source === ShoppingItemSource.AUTO ? `From recipe${item.recipeId ? "" : "s"}` : "Added manually"}</span><span>{item.status === ShoppingItemStatus.BOUGHT ? "Bought" : item.status === ShoppingItemStatus.SKIPPED ? "Skipped" : "To buy"}</span></div>
-                  <form action={toggleItemStatus}>
-                    <input name="itemId" type="hidden" value={item.id} />
-                    <input name="nextStatus" type="hidden" value={nextStatus} />
-                    <button className="app-theme-secondary-button rounded-md px-3 py-2 text-sm font-medium" type="submit">
-                      {item.status === ShoppingItemStatus.BOUGHT ? "Mark pending" : "Mark bought"}
-                    </button>
-                  </form>
-                </article>
-              );
-            })}</section>)
-          )}
+        {items.length === 0 ? (
+          <div className="shopping-empty">
+            <ShoppingBasket aria-hidden="true" size={24} />
+            <h3>Your list is empty</h3>
+            <p>{standaloneMode ? "Add the first thing you need." : planExists ? "Add an item or bring in groceries from the week’s meals." : "Plan a meal to generate a weekly list, or add items to the standalone list."}</p>
+            {planExists && !hasStalePlan && (
+              <form action={regenerateShoppingList}>
+                <button className="app-theme-primary-button shopping-action" type="submit">{shoppingList ? "Refresh from plan" : "Generate from plan"}</button>
+              </form>
+            )}
+            {!standaloneMode && !planExists && <Link className="app-theme-primary-button shopping-action" href={planHref}>Plan meals</Link>}
+          </div>
+        ) : (
+          groupedItems.map(({ category, items }) => (
+            <section className="shopping-category" key={category}>
+              <h3>{category}</h3>
+              <ul>
+                {items.map((item) => {
+                  const checked = item.status === ShoppingItemStatus.BOUGHT;
+                  const skipped = item.status === ShoppingItemStatus.SKIPPED;
+                  const nextStatus = checked ? ShoppingItemStatus.PENDING : ShoppingItemStatus.BOUGHT;
+                  const amount = [item.quantity?.toString(), item.unit].filter(Boolean).join(" ");
+
+                  return (
+                    <li className="shopping-row" data-status={item.status} key={item.id}>
+                      <form action={toggleItemStatus} className="shopping-toggle-form">
+                        <input name="itemId" type="hidden" value={item.id} />
+                        <input name="nextStatus" type="hidden" value={nextStatus} />
+                        <button
+                          aria-describedby={`source-${item.id}`}
+                          aria-label={`Mark ${item.ingredientName}${amount ? `, ${amount},` : ""} bought`}
+                          aria-pressed={checked}
+                          className="shopping-item-toggle"
+                          type="submit"
+                        >
+                          <span aria-hidden="true" className="shopping-checkbox">{checked && <Check size={16} strokeWidth={2.6} />}</span>
+                          <span className="shopping-item-name">
+                            <span>{item.ingredientName}</span>
+                            <small id={`source-${item.id}`}>{item.source === ShoppingItemSource.AUTO ? `From recipe${item.recipeId ? "" : "s"}` : "Added manually"}{skipped ? " · Skipped" : ""}</small>
+                          </span>
+                          {amount && <span className="shopping-item-amount">{amount}</span>}
+                        </button>
+                      </form>
+                      <details className="shopping-edit">
+                        <summary aria-label={`Edit ${item.ingredientName}`} title={`Edit ${item.ingredientName}`}><Pencil aria-hidden="true" size={16} /><span className="sr-only">Edit</span></summary>
+                        <form action={updateItem} className="shopping-item-fields">
+                          <input name="itemId" type="hidden" value={item.id} />
+                          <label>Item<input className="app-theme-input" name="ingredientName" defaultValue={item.ingredientName} required /></label>
+                          <label>Quantity<input className="app-theme-input" defaultValue={item.quantity?.toString() ?? ""} name="quantity" type="number" min="0" step="0.01" /></label>
+                          <label>Unit<input className="app-theme-input" name="unit" defaultValue={item.unit ?? ""} /></label>
+                          <button className="app-theme-secondary-button shopping-action" type="submit">Save item</button>
+                        </form>
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))
+        )}
+        {items.length > 0 && planExists && !hasStalePlan && (
+          <form action={regenerateShoppingList} className="shopping-refresh">
+            <button className="shopping-text-action" type="submit"><RefreshCw aria-hidden="true" size={15} /> Refresh from plan</button>
+          </form>
+        )}
       </section>
     </AppPageShell>
   );

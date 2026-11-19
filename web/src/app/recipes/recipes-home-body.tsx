@@ -1,18 +1,22 @@
 import { RecipeVisibility } from "@prisma/client";
-import { Bookmark, FolderPlus, Globe2, Plus, Search } from "lucide-react";
+import { Bookmark, FolderPlus, Globe2, Plus } from "lucide-react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AppPageShell } from "@/app/_components/page-shell";
+import { RecipeSearchForm } from "@/app/_components/recipe-search-form";
 import { RecipeImage } from "@/app/_components/recipe-image";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
 import { ensureRecipeRevision } from "@/lib/recipe-revisions";
 
 import { loadRecipeSearchPage } from "@/lib/recipe-search-service";
+import { readSearchFilters, type RecipeSearchParams } from "@/lib/recipe-search";
+
+export type RecipeLibraryParams = RecipeSearchParams & { view?: string; collection?: string; page?: string };
 
 type RecipesHomeBodyProps = {
-  searchParams: Promise<{ q?: string; view?: string; collection?: string; page?: string; maxMinutes?: string; diet?: string; exclude?: string }>;
+  searchParams: Promise<RecipeLibraryParams>;
   currentPath: "/recipes";
   searchActionPath: "/recipes";
 };
@@ -31,8 +35,9 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
   const membership = await resolveActiveMembership(userId, organizationId);
   if (!membership) return <main className="app-theme-page grid min-h-screen place-items-center p-6">No household is connected to this account.</main>;
 
-  const search = await searchParams;
-  const query = search.q?.trim() ?? "";
+  const params = await searchParams;
+  const search = { view: params.view, collection: params.collection, page: params.page, ...readSearchFilters(params) };
+  const query = search.q ?? "";
   const view = VIEWS.includes(search.view as View) ? (search.view as View) : "mine";
 
   async function createCollection(formData: FormData) {
@@ -135,32 +140,18 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
       currentPath={currentPath}
       title="Recipes"
       subtitle="Keep the recipes you love, improve them over time, and find something new for this week."
-      headerChildren={<Link className="app-theme-primary-button inline-flex items-center gap-2 px-4 py-2 text-sm" href="/recipes/new"><Plus size={17} /> Create recipe</Link>}
+      headerChildren={<Link className="app-theme-primary-button inline-flex min-h-11 items-center gap-2 px-4 py-2 text-sm" href="/recipes/new"><Plus aria-hidden="true" size={17} /> Create recipe</Link>}
     >
-      <div className="recipe-library-toolbar">
-        <nav className="recipe-library-tabs" aria-label="Recipe library views">
-          <Link className={view === "mine" ? "is-active" : undefined} href="/recipes">My recipes</Link>
-          <Link className={view === "collections" ? "is-active" : undefined} href="/recipes?view=collections">Collections</Link>
-          <Link className={view === "discover" ? "is-active" : undefined} href="/recipes?view=discover">Discover</Link>
-        </nav>
-        <form className="recipe-search" action={searchActionPath} method="get">
-          {view !== "mine" ? <input name="view" type="hidden" value={view} /> : null}
-          <Search aria-hidden="true" size={17} />
-          <input aria-label="Search titles, ingredients and tags" defaultValue={query} name="q" placeholder="Title, ingredient or tag" />
-          {search.collection ? <input name="collection" type="hidden" value={search.collection} /> : null}
-          <button type="submit">Search</button>
-        </form>
-      </div>
-
-      <form className="recipe-filter-bar" method="get" action={searchActionPath}>
-        <input name="view" type="hidden" value={view} /><input name="q" type="hidden" value={query} />
+      <RecipeSearchForm action={searchActionPath} query={query} maxMinutes={search.maxMinutes} diet={search.diet} exclude={search.exclude} presetTimes>
+        <input name="view" type="hidden" value={view} />
         {search.collection ? <input name="collection" type="hidden" value={search.collection} /> : null}
-        <label>Ready within<select className="app-theme-input" name="maxMinutes" defaultValue={search.maxMinutes ?? ""}><option value="">Any time</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">1 hour</option></select></label>
-        <label>Dietary tag<input className="app-theme-input" name="diet" defaultValue={search.diet} placeholder="e.g. vegetarian" /></label>
-        <label>Exclude ingredients<input className="app-theme-input" name="exclude" defaultValue={search.exclude} placeholder="e.g. peanuts, shellfish" /></label>
-        <button className="app-theme-secondary-button px-4" type="submit">Apply filters</button>
-        <small>Filters match recipe labels and ingredient names. Check the recipe and packaging for dietary needs.</small>
-      </form>
+      </RecipeSearchForm>
+
+      <nav className="recipe-library-tabs" aria-label="Recipe library views">
+        <Link className={view === "mine" ? "is-active" : undefined} href="/recipes">My recipes</Link>
+        <Link className={view === "collections" ? "is-active" : undefined} href="/recipes?view=collections">Collections</Link>
+        <Link className={view === "discover" ? "is-active" : undefined} href="/recipes?view=discover">Discover</Link>
+      </nav>
       <p className="app-theme-muted text-sm" role="status">{recipes.total} matching recipes</p>
       {view === "collections" ? (
         <section className="collection-strip">

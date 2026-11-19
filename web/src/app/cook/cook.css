@@ -1,0 +1,434 @@
+.cooking-session {
+  display: grid;
+  max-width: 76rem;
+  margin-inline: auto;
+  padding: clamp(16px, 4vw, 48px) clamp(16px, 4vw, 48px) 72px;
+  gap: 24px;
+}
+
+.cooking-session > * {
+  min-width: 0;
+}
+
+.cooking-links { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+
+.cooking-back {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: .875rem;
+}
+
+.cooking-back:hover,
+.cooking-show-step:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.cooking-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(12px, 3vw, 32px);
+  margin-top: 8px;
+}
+
+.cooking-title h1 {
+  margin-top: 4px;
+  font-size: clamp(2rem, 4.7vw, 3.8rem);
+  font-weight: 500;
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.cooking-title img {
+  flex: 0 0 auto;
+  width: clamp(64px, 15vw, 160px);
+  height: auto;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--control-radius);
+  object-fit: cover;
+}
+
+.cooking-meal {
+  color: var(--primary-hover);
+  font-size: .875rem;
+  font-weight: 650;
+}
+
+.cooking-focus {
+  align-self: start;
+  padding-block: 14px 18px;
+  border-block: 1px solid var(--divider);
+}
+
+#cooking-step-title { scroll-margin-top: 16px; }
+
+.cooking-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.cooking-progress progress {
+  width: 100%;
+  min-width: 0;
+  height: 6px;
+  overflow: hidden;
+  border: none;
+  border-radius: 99px;
+  appearance: none;
+  background: var(--surface-subtle);
+  color: var(--primary);
+}
+
+.cooking-progress progress::-webkit-progress-bar {
+  background: var(--surface-subtle);
+}
+
+.cooking-progress progress::-webkit-progress-value {
+  border-radius: 99px;
+  background: var(--primary);
+}
+
+.cooking-progress progress::-moz-progress-bar {
+  border-radius: 99px;
+  background: var(--primary);
+}
+
+.cooking-progress span {
+  flex: 0 0 auto;
+}
+
+.cooking-current-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.cooking-current-heading h2,
+.cooking-finished h2 {
+  color: var(--primary-hover);
+  font-size: .975rem;
+  font-weight: 650;
+}
+
+.cooking-instruction {
+  max-width: 54ch;
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: clamp(1.13rem, 2.4vw, 1.65rem);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.cooking-step-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: .875rem;
+}
+
+.cooking-step-details span,
+.cooking-group-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cooking-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.cooking-done,
+.cooking-finished button {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 14px;
+  font-size: .9rem;
+  font-weight: 630;
+  cursor: pointer;
+}
+
+.cooking-finished button {
+  margin-top: 12px;
+}
+
+.cooking-step-navigation {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.cooking-step-navigation button,
+.cooking-servings button {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  border: none;
+  border-radius: var(--control-radius);
+  background: var(--surface-subtle);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.cooking-step-navigation button:disabled,
+.cooking-servings button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.cooking-step-navigation button:not(:disabled):hover,
+.cooking-servings button:not(:disabled):hover {
+  background: var(--primary-soft);
+}
+
+.cooking-ingredients {
+  align-self: start;
+  border-bottom: 1px solid var(--divider);
+}
+
+.cooking-ingredients summary {
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  color: var(--ink);
+  font-weight: 650;
+  list-style: none;
+  cursor: pointer;
+}
+
+.cooking-ingredients summary::-webkit-details-marker {
+  display: none;
+}
+
+.cooking-ingredients summary > span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: .82rem;
+  white-space: nowrap;
+}
+
+.cooking-ingredients[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.cooking-ingredients-content {
+  padding: 0 0 12px;
+}
+
+.cooking-ingredient-tools,
+.cooking-ingredient-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cooking-servings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.cooking-servings span {
+  min-width: 2ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cooking-ingredient-mode {
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.cooking-ingredient-mode button {
+  min-height: 44px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: .82rem;
+  cursor: pointer;
+}
+
+.cooking-ingredient-mode button[aria-pressed="true"] {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.cooking-ingredient-list {
+  margin-top: 10px;
+}
+
+.cooking-ingredient-list li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-block: 4px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--ink);
+  font-size: .9rem;
+}
+
+.cooking-ingredient-groups .cooking-ingredient-list li {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 44px;
+}
+
+.cooking-ingredient-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cooking-ingredient-list li > small,
+.cooking-ingredient-list li small {
+  display: block;
+  color: var(--muted);
+}
+
+.cooking-ingredient-list button,
+.cooking-step-check {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: var(--control-radius);
+  background: var(--surface-subtle);
+  color: var(--primary-hover);
+  font-size: .875rem;
+  cursor: pointer;
+}
+
+.cooking-ingredient-list button::before {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  content: "";
+}
+
+.cooking-ingredient-list button[aria-pressed="true"]::before {
+  display: none;
+}
+
+.cooking-ingredient-list button[aria-pressed="true"],
+.cooking-step-check[aria-pressed="true"] {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.cooking-ingredient-list li:has(button[aria-pressed="true"]) > span:nth-child(2) {
+  color: var(--muted);
+}
+
+.cooking-ingredient-groups h3 {
+  margin-top: 14px;
+  color: var(--primary-hover);
+  font-size: .875rem;
+  font-weight: 650;
+}
+
+.cooking-overview > h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.cooking-overview section {
+  margin-top: 12px;
+}
+
+.cooking-overview section h3 {
+  color: var(--text-secondary);
+  font-weight: 650;
+}
+
+.cooking-group-duration {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.cooking-overview li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding-block: 14px;
+}
+
+.cooking-overview li p {
+  max-width: 65ch;
+  padding-top: 8px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.cooking-show-step {
+  min-height: 44px;
+  padding-inline: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--primary-hover);
+  font-size: .82rem;
+  cursor: pointer;
+}
+
+@media (min-width: 1080px) {
+  .cooking-session {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    grid-template-areas: "title title" "focus ingredients" "overview ingredients";
+    align-items: start;
+  }
+
+  .cooking-header { grid-area: title; }
+  .cooking-focus { grid-area: focus; }
+  .cooking-ingredients { position: sticky; top: 24px; grid-area: ingredients; }
+  .cooking-overview { grid-area: overview; }
+}
+
+.cook-workspace .cook-picker-header > div {
+  display: block;
+}
+
+
+.cook-workspace .cook-picker-header p {
+  margin: 4px 0 0;
+}
+
+.cook-workspace .cook-picker > section {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.cook-workspace .cook-picker > section > a {
+  border: 0;
+}
