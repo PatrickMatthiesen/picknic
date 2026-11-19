@@ -1,4 +1,5 @@
 import { MembershipRole } from "@prisma/client";
+import { ChevronDown, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -6,9 +7,11 @@ import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-conte
 import { prisma } from "@/lib/prisma";
 import { AppPageShell } from "@/app/_components/page-shell";
 import { getUnitStorageKey, normalizeUnitInput } from "@/lib/units";
+import { PantrySaveButton } from "./pantry-save-button";
 
 export default async function PantryPage({ searchParams }: { searchParams: Promise<{ view?: string; saved?: string }> }) {
   const search = await searchParams;
+  const savedPath = search.view === "soon" ? "/pantry?view=soon&saved=1" : "/pantry?saved=1";
   const { userId, organizationId } = await requireAppAuthContext();
   const membership = await resolveActiveMembership(userId, organizationId);
   const householdId = membership?.householdId ?? null;
@@ -87,7 +90,7 @@ export default async function PantryPage({ searchParams }: { searchParams: Promi
     });
 
     revalidatePath("/pantry");
-    redirect("/pantry?saved=1");
+    redirect(savedPath);
   }
 
   async function updateQuantity(formData: FormData) {
@@ -120,7 +123,7 @@ export default async function PantryPage({ searchParams }: { searchParams: Promi
     });
 
     revalidatePath("/pantry");
-    redirect("/pantry?saved=1");
+    redirect(savedPath);
   }
 
   async function updateExpiry(formData: FormData) {
@@ -135,7 +138,7 @@ export default async function PantryPage({ searchParams }: { searchParams: Promi
     if (!activeMembership) throw new Error("No household found for this user.");
     await prisma.pantryItem.updateMany({ where: { id: itemId, householdId: activeMembership.householdId }, data: { expiresAt } });
     revalidatePath("/pantry");
-    redirect("/pantry?saved=1");
+    redirect(savedPath);
   }
 
   async function removePantryItem(formData: FormData) {
@@ -160,7 +163,7 @@ export default async function PantryPage({ searchParams }: { searchParams: Promi
     });
 
     revalidatePath("/pantry");
-    redirect("/pantry?saved=1");
+    redirect(savedPath);
   }
 
   const items = await prisma.pantryItem.findMany({
@@ -176,70 +179,68 @@ export default async function PantryPage({ searchParams }: { searchParams: Promi
     <AppPageShell
       currentPath="/pantry"
       title="Pantry"
-      subtitle="Manage on-hand ingredients used to reduce generated shopping lists."
     >
       {search.saved ? <p role="status" className="app-theme-muted">Pantry updated.</p> : null}
-      <nav className="recipe-tabs" aria-label="Pantry view"><Link className={search.view !== "soon" ? "is-active" : undefined} href="/pantry">All items</Link><Link className={search.view === "soon" ? "is-active" : undefined} href="/pantry?view=soon">Use soon</Link></nav>
-      <section className="pantry-add">
-          <h2 className="text-lg font-semibold">Add or update pantry item</h2>
-          <form action={addOrUpdatePantryItem} className="mt-4 grid gap-3 sm:grid-cols-4">
-            <input className="app-theme-input rounded-lg px-3 py-2 sm:col-span-2" aria-label="Ingredient name" required name="ingredientName" placeholder="Ingredient name" />
-            <input className="app-theme-input rounded-lg px-3 py-2" aria-label="Quantity" min={0.01} required name="quantity" step="0.01" type="number" />
-            <input className="app-theme-input rounded-lg px-3 py-2" name="unit" placeholder="Unit (e.g., g, cup, each)" aria-label="Unit" />
-            <label className="app-theme-muted flex items-center gap-2 text-sm">Use by <input className="app-theme-input rounded-lg px-3 py-2" name="expiresAt" type="date" /></label>
-            <button className="app-theme-primary-button w-fit rounded-lg px-5 py-2 text-sm font-medium" type="submit">
-              Save pantry item
-            </button>
+      <section className="pantry-working-list" aria-labelledby="pantry-stock-title">
+        <header className="pantry-stock-header">
+          <h2 id="pantry-stock-title">On hand</h2>
+          <nav className="recipe-tabs" aria-label="Pantry view">
+            <Link aria-current={search.view !== "soon" ? "page" : undefined} className={search.view !== "soon" ? "is-active" : undefined} href="/pantry">All items</Link>
+            <Link aria-current={search.view === "soon" ? "page" : undefined} className={search.view === "soon" ? "is-active" : undefined} href="/pantry?view=soon">Use soon</Link>
+          </nav>
+        </header>
+        {visibleItems.length === 0 && (
+          <p className="app-theme-muted pantry-empty">{search.view === "soon" ? "Nothing is due to be used in the next seven days." : "Your pantry is empty. Add an ingredient to start."}</p>
+        )}
+        <details className="pantry-add">
+          <summary className="app-theme-primary-button">
+            <span className="pantry-add-open"><Plus size={16} aria-hidden="true" /> Add item</span>
+            <span className="pantry-add-close"><X size={16} aria-hidden="true" /> Close form</span>
+          </summary>
+          <form action={addOrUpdatePantryItem} className="pantry-add-fields">
+            <label>Ingredient<input className="app-theme-input" required name="ingredientName" placeholder="e.g. Tomatoes" /></label>
+            <label>Quantity<input className="app-theme-input" min={0.01} required name="quantity" step="0.01" type="number" /></label>
+            <label>Unit<input className="app-theme-input" name="unit" required placeholder="e.g. g or each" /></label>
+            <label><span>Use by <small>Optional</small></span><input className="app-theme-input" name="expiresAt" type="date" /></label>
+            <PantrySaveButton />
           </form>
-      </section>
-
-      <section className="pantry-working-list">
-          <h2 className="text-lg font-semibold">Current pantry items</h2>
-          {visibleItems.length === 0 ? (
-            <p className="app-theme-card app-theme-muted rounded-lg border-dashed p-5">No items in this view.</p>
-          ) : (
-            visibleItems.map((item) => (
+        </details>
+        {visibleItems.map((item) => (
               <article className="pantry-working-row" key={item.id}>
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="pantry-item-summary">
                   <p className="text-sm font-medium">{item.ingredientName}</p>
                   <p className="app-theme-muted text-sm">{item.quantity.toString()} {item.unit}</p>
                   {item.expiresAt ? <p className="app-theme-muted text-xs">{item.expiresAt <= useSoonCutoff ? "Use soon · " : "Use by "}{item.expiresAt.toLocaleDateString()}</p> : null}
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <form action={updateQuantity} className="flex items-center gap-2">
-                    <input name="itemId" type="hidden" value={item.id} />
-                    <input
-                      className="app-theme-input w-28 rounded-lg px-3 py-2 text-sm"
-                      defaultValue={item.quantity.toString()}
-                      min={0}
-                      name="quantity"
-                      step="0.01"
-                      type="number"
-                    />
-                    <button className="app-theme-secondary-button rounded-lg px-4 py-2 text-sm font-medium" type="submit">
-                      Update qty
-                    </button>
-                  </form>
-                  <form action={updateExpiry} className="flex items-center gap-2">
-                    <input name="itemId" type="hidden" value={item.id} />
-                    <label className="app-theme-muted text-sm" htmlFor={`expires-${item.id}`}>Use by</label>
-                    <input className="app-theme-input rounded-lg px-2 py-2 text-sm" id={`expires-${item.id}`} name="expiresAt" type="date" defaultValue={item.expiresAt?.toISOString().slice(0, 10) ?? ""} />
-                    <button className="app-theme-secondary-button rounded-lg px-3 py-2 text-sm" type="submit">Save date</button>
-                  </form>
-
-                  {membership?.role === MembershipRole.OWNER ? (
-                    <form action={removePantryItem}>
+                <details className="pantry-row-edit">
+                  <summary>Edit<span className="sr-only"> {item.ingredientName}</span><ChevronDown size={14} aria-hidden="true" /></summary>
+                  <div className="pantry-edit-fields">
+                    <form action={updateQuantity}>
                       <input name="itemId" type="hidden" value={item.id} />
-                      <button className="app-theme-secondary-button rounded-lg px-4 py-2 text-sm font-medium" type="submit">
-                        Remove
-                      </button>
+                      <label>Quantity
+                        <input className="app-theme-input pantry-edit-quantity" defaultValue={item.quantity.toString()} min={0} name="quantity" step="0.01" type="number" />
+                      </label>
+                      <button className="app-theme-secondary-button" type="submit">Update qty</button>
                     </form>
-                  ) : null}
-                </div>
+                    <form action={updateExpiry}>
+                      <input name="itemId" type="hidden" value={item.id} />
+                      <label>Use by
+                        <input className="app-theme-input" name="expiresAt" type="date" defaultValue={item.expiresAt?.toISOString().slice(0, 10) ?? ""} />
+                      </label>
+                      <button className="app-theme-secondary-button" type="submit">Save date</button>
+                    </form>
+
+                    {membership?.role === MembershipRole.OWNER ? (
+                      <form action={removePantryItem}>
+                        <input name="itemId" type="hidden" value={item.id} />
+                        <button className="app-theme-secondary-button" type="submit">Remove</button>
+                      </form>
+                    ) : null}
+                  </div>
+                </details>
               </article>
-            ))
-          )}
+        ))}
       </section>
     </AppPageShell>
   );

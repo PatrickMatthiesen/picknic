@@ -4,27 +4,44 @@ import { ArrowLeft, CalendarDays, ChefHat } from "lucide-react";
 import { RecipeVisibility } from "@prisma/client";
 import { RecipeImage } from "@/app/_components/recipe-image";
 import { CookSessionClient } from "@/app/cook/cook-session-client";
+import { cookPlannerHref } from "./cook-links";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { getDateKey, parseDateKey } from "@/lib/meal-plan";
 import { prisma } from "@/lib/prisma";
-import { readRecipeSnapshot } from "@/lib/recipe-revisions";
+import { readRecipeSnapshot, type RecipeSnapshotIngredient, type RecipeSnapshotStep } from "@/lib/recipe-revisions";
 
 type PageProps = { searchParams: Promise<{ date?: string; entry?: string; recipe?: string }> };
 
+type CookRecipeSource = {
+  id: string;
+  imageUrl: string | null;
+  ingredients: Array<Omit<RecipeSnapshotIngredient, "quantity"> & { quantity: Prisma.Decimal | number | null }>;
+  servings: number;
+  steps: RecipeSnapshotStep[];
+  title: string;
+};
+
 function getCookRecipe(entry: {
-  recipe: {
-    id: string;
-    imageUrl: string | null;
-    ingredients: Array<{ id: string; name: string; notes: string | null; quantity: Prisma.Decimal | null; unit: string | null; unitId: string | null; component: string | null }>;
-    servings: number;
-    steps: Array<{ id: string; position: number; instruction: string; component: string | null; durationMinutes: number | null; advanceNotice: boolean }>;
-    title: string;
-  };
+  recipe: CookRecipeSource;
   recipeRevision: { snapshot: Prisma.JsonValue } | null;
 }) {
   if (!entry.recipeRevision) return entry.recipe;
   const snapshot = readRecipeSnapshot(entry.recipeRevision.snapshot);
   return { ...snapshot, id: entry.recipe.id };
+}
+
+function toCookRecipe(id: string, recipe: Omit<CookRecipeSource, "id">) {
+  return {
+    id,
+    title: recipe.title,
+    servings: recipe.servings,
+    ingredients: recipe.ingredients.map(({ id, name, notes, quantity, unit, unitId, component, componentId, componentPosition }) => ({
+      id, name, notes, quantity: quantity == null ? null : Number(quantity), unit, unitId, component, componentId, componentPosition,
+    })),
+    steps: recipe.steps.map(({ id, position, instruction, component, componentId, componentPosition, durationMinutes, advanceNotice }) => ({
+      id, position, instruction, component, componentId, componentPosition, durationMinutes, advanceNotice,
+    })),
+  };
 }
 
 export default async function CookPage({ searchParams }: PageProps) {
@@ -35,6 +52,7 @@ export default async function CookPage({ searchParams }: PageProps) {
 
   const date = parseDateKey(search.date) ?? new Date();
   const dateKey = getDateKey(date);
+  const plannerHref = cookPlannerHref(dateKey);
   if (search.recipe) {
     const recipe = await prisma.recipe.findFirst({
       where: { id: search.recipe, OR: [
@@ -50,7 +68,7 @@ export default async function CookPage({ searchParams }: PageProps) {
       const revision = revisionId ? await prisma.recipeRevision.findFirst({ where: { id: revisionId, recipeId: recipe.id } }) : null;
       if ((recipe.householdId === membership.householdId && !recipe.deletedAt) || revision) {
         const display = revision ? readRecipeSnapshot(revision.snapshot) : recipe;
-        return <CookSessionClient dateKey={dateKey} entryId={`standalone:${recipe.id}:${revision?.id ?? "live"}`} imageUrl={display.imageUrl} mealType="COOK NOW" recipe={{ id: recipe.id, title: display.title, servings: display.servings, ingredients: display.ingredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, notes: ingredient.notes, quantity: ingredient.quantity == null ? null : Number(ingredient.quantity), unit: ingredient.unit, unitId: ingredient.unitId, component: ingredient.component })), steps: display.steps.map((step) => ({ id: step.id, position: step.position, instruction: step.instruction, component: step.component, durationMinutes: step.durationMinutes, advanceNotice: step.advanceNotice })) }} recipeRevisionId={revision?.id ?? recipe.id} servingsOverride={null} />;
+        return <CookSessionClient key={`standalone:${recipe.id}:${revision?.id ?? "live"}`} dateKey={dateKey} entryId={`standalone:${recipe.id}:${revision?.id ?? "live"}`} imageUrl={display.imageUrl} mealType="COOK NOW" recipe={toCookRecipe(recipe.id, display)} recipeRevisionId={revision?.id ?? recipe.id} servingsOverride={null} />;
       }
     }
   }
@@ -72,14 +90,9 @@ export default async function CookPage({ searchParams }: PageProps) {
         dateKey={dateKey}
         entryId={selected.id}
         imageUrl={recipe.imageUrl}
+        key={`${selected.id}:${selected.recipeRevisionId ?? selected.recipe.id}`}
         mealType={selected.mealType}
-        recipe={{
-          id: recipe.id,
-          title: recipe.title,
-          servings: recipe.servings,
-          ingredients: recipe.ingredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, notes: ingredient.notes, quantity: ingredient.quantity == null ? null : Number(ingredient.quantity), unit: ingredient.unit, unitId: ingredient.unitId, component: ingredient.component })),
-          steps: recipe.steps.map((step) => ({ id: step.id, position: step.position, instruction: step.instruction, component: step.component, durationMinutes: step.durationMinutes, advanceNotice: step.advanceNotice })),
-        }}
+        recipe={toCookRecipe(recipe.id, recipe)}
         recipeRevisionId={selected.recipeRevisionId ?? selected.recipe.id}
         servingsOverride={selected.servingsOverride}
       />
@@ -89,7 +102,7 @@ export default async function CookPage({ searchParams }: PageProps) {
   if (entries.length > 1) {
     return (
       <section className="cook-picker">
-        <div className="cook-picker-header"><Link href={`/planner?day=${dateKey}`}><ArrowLeft size={18} /> Back to this week</Link><div><ChefHat size={22} /><h1>What are you cooking?</h1><p>{date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" })}</p></div></div>
+        <div className="cook-picker-header"><Link href={plannerHref}><ArrowLeft size={18} /> Back to meal plan</Link><div><h1>What are you cooking?</h1><p>{date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })}</p></div></div>
         <section>{entries.map((entry) => {
           const recipe = getCookRecipe(entry);
           return <Link href={`/cook?date=${dateKey}&entry=${entry.id}`} key={entry.id}><RecipeImage alt="" height={220} recipe={{ id: recipe.id, imageUrl: recipe.imageUrl }} width={330} /><span>{entry.mealType.toLowerCase()}</span><strong className="recipe-title">{recipe.title}</strong><small>Serves {entry.servingsOverride ?? recipe.servings}</small></Link>;
@@ -101,9 +114,9 @@ export default async function CookPage({ searchParams }: PageProps) {
   return (
     <section className="cook-empty">
       <ChefHat aria-hidden="true" size={32} />
-      <h1>Nothing planned for today</h1>
-      <p>Choose a recipe for {date.toLocaleDateString("en", { weekday: "long" })}, or keep the day open.</p>
-      <div><Link className="app-theme-primary-button" href={`/planner?day=${dateKey}`}><CalendarDays size={17} /> Plan a meal</Link><Link className="app-theme-secondary-button" href="/planner"><ArrowLeft size={17} /> Back to this week</Link></div>
+      <h1>No meals to cook</h1>
+      <p>Choose a recipe for {date.toLocaleDateString("en", { weekday: "long", timeZone: "UTC" })}, or keep the day open.</p>
+      <div><Link className="app-theme-primary-button" href={`${plannerHref}&meal=DINNER&pick=1`}><CalendarDays size={17} /> Plan a meal</Link><Link className="app-theme-secondary-button" href={plannerHref}><ArrowLeft size={17} /> Back to meal plan</Link></div>
     </section>
   );
 }

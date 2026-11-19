@@ -1,7 +1,7 @@
-import { RecipesHomeBody } from "@/app/recipes/recipes-home-body";
+import { RecipesHomeBody, type RecipeLibraryParams } from "@/app/recipes/recipes-home-body";
 
 type PageProps = {
-  searchParams: Promise<{ q?: string; view?: string; collection?: string; page?: string; maxMinutes?: string; diet?: string; exclude?: string }>;
+  searchParams: Promise<RecipeLibraryParams>;
 };
 
 export default async function RecipesPage({ searchParams }: PageProps) {

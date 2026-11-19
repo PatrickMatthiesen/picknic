@@ -2,16 +2,17 @@
 name: Picknic
 description: A calm weekly meal planner and recipe collection built around the week table.
 colors:
-  canvas: "#f7f7f4"
-  surface: "#ffffff"
-  surface-subtle: "#f0f1ed"
-  ink: "#27231f"
-  text-secondary: "#4f4b45"
-  muted: "#6d6860"
-  divider: "#e7e5e1"
-  sage: "#526b4f"
-  sage-hover: "#40563e"
-  sage-soft: "#e8eee5"
+  canvas: "#f6f3ee"
+  surface: "#fffdf8"
+  surface-subtle: "#ede8e0"
+  ink: "#282421"
+  text-secondary: "#514a44"
+  muted: "#655e58"
+  divider: "#dcd5cc"
+  field-border: "#8a7e73"
+  indigo: "#414f86"
+  indigo-hover: "#343f6d"
+  indigo-soft: "#e8eaf1"
   mustard: "#d6a72e"
   tomato: "#b64a3a"
 typography:
@@ -23,10 +24,10 @@ typography:
     letterSpacing: "0"
   headline:
     fontFamily: "Geist, Arial, sans-serif"
-    fontSize: "1.75rem"
-    fontWeight: 650
-    lineHeight: 1.2
-    letterSpacing: "0"
+    fontSize: "2.15rem"
+    fontWeight: 680
+    lineHeight: 1.12
+    letterSpacing: "-0.04em"
   body:
     fontFamily: "Geist, Arial, sans-serif"
     fontSize: "1rem"
@@ -40,8 +41,8 @@ typography:
     lineHeight: 1.3
     letterSpacing: "0"
 rounded:
-  control: "6px"
-  surface: "8px"
+  control: "4px"
+  surface: "6px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -51,23 +52,23 @@ spacing:
   xxl: "32px"
 components:
   button-primary:
-    backgroundColor: "{colors.sage}"
+    backgroundColor: "{colors.indigo}"
     textColor: "{colors.surface}"
-    rounded: "{rounded.surface}"
+    rounded: "{rounded.control}"
     padding: "10px 16px"
   button-primary-hover:
-    backgroundColor: "{colors.sage-hover}"
+    backgroundColor: "{colors.indigo-hover}"
     textColor: "{colors.surface}"
-    rounded: "{rounded.surface}"
+    rounded: "{rounded.control}"
   button-secondary:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.surface}"
+    rounded: "{rounded.control}"
     padding: "10px 16px"
   field:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.surface}"
+    rounded: "{rounded.control}"
     height: "44px"
 ---
 
@@ -77,7 +78,7 @@ components:
 
 **Creative North Star: "The Quiet Week Table"**
 
-Picknic should feel like a clear table prepared for planning, not a dashboard waiting to be administered. The interface is calm, compact, and familiar: a true neutral canvas, white working surfaces, restrained dividers, sage actions, and food photography that supplies most of the visual richness.
+Picknic should feel like a clear table prepared for planning, not a dashboard waiting to be administered. The interface is calm, compact, and familiar: a true neutral canvas, white working surfaces, restrained dividers, indigo actions, and food photography that supplies most of the visual richness.
 
 The week table is the center of gravity. Recipes and Cook mode inherit the same practical vocabulary while becoming progressively more focused. Rustic or cookbook character comes through the recipe serif and imagery, never through fake paper textures, scrapbook decoration, or reduced legibility.
 
@@ -89,23 +90,23 @@ The week table is the center of gravity. Recipes and Cook mode inherit the same 
 
 ## Colors
 
-The palette is neutral and food-led, with sage for actions, mustard for planned dinner state, and tomato for destructive feedback.
+The palette is neutral and food-led, with indigo for actions, mustard for planned dinner state, and tomato for destructive feedback.
 
 ### Primary
-- **Table Sage** (`#526b4f`): primary actions, active navigation, selection, and focus context.
-- **Deep Sage** (`#40563e`): hover and stronger selected text.
-- **Soft Sage** (`#e8eee5`): selected rows, current day, and quiet active surfaces.
+- **Indigo** (`#414f86`): primary actions, active navigation, selection, and focus context.
+- **Deep Indigo** (`#343f6d`): hover and stronger selected text.
+- **Soft Indigo** (`#e8eaf1`): selected rows, current day, and quiet active surfaces.
 
 ### Secondary
 - **Dinner Mustard** (`#d6a72e`): meal-state badges and dinner emphasis, never general decoration.
 - **Tomato Red** (`#b64a3a`): removal and destructive actions only.
 
 ### Neutral
-- **Canvas** (`#f7f7f4`): page background.
-- **Surface** (`#ffffff`): tables, editors, controls, and recipe containers.
-- **Ink** (`#27231f`): headings and primary text.
-- **Secondary Ink** (`#4f4b45`): supporting text.
-- **Divider** (`#e7e5e1`): the primary structural device.
+- **Canvas** (`#f6f3ee`): page background.
+- **Surface** (`#fffdf8`): tables, editors, controls, and recipe containers.
+- **Ink** (`#282421`): headings and primary text.
+- **Secondary Ink** (`#514a44`): supporting text.
+- **Divider** (`#dcd5cc`): the primary structural device.
 
 **The Food Carries Color Rule.** Keep interface color restrained so recipe photography remains the richest visual element.
 
@@ -118,7 +119,7 @@ The palette is neutral and food-led, with sage for actions, mustard for planned 
 
 ### Hierarchy
 - **Display** (400, `2rem`, 1.1): wordmark and recipe titles only.
-- **Headline** (650, `1.75rem`, 1.2): primary page headings.
+- **Headline** (680, `1.65rem` to `2.15rem`, 1.12): primary page headings.
 - **Title** (600-650, `1.125rem` to `1.25rem`, 1.3): section and recipe-card titles.
 - **Body** (400, `1rem`, 1.5): instructions and explanatory text, capped around 70ch.
 - **Label** (600, `0.75rem` to `0.875rem`, normal case): meals, fields, controls, and metadata.
@@ -134,25 +135,25 @@ Picknic is flat by default. Depth comes from canvas-versus-surface tone, one-pix
 ## Components
 
 ### Buttons
-- **Shape:** compact rounded rectangle (`6px` to `8px`), minimum 40-44px touch height where space allows.
-- **Primary:** Table Sage with white text; Deep Sage on hover.
-- **Hover / Focus:** 180ms color transition and a visible three-pixel sage focus outline.
+- **Shape:** compact rounded rectangle (`4px`), minimum 40-44px touch height where space allows.
+- **Primary:** Indigo with white text; Deep Indigo on hover.
+- **Hover / Focus:** 180ms color transition and a visible two-pixel indigo focus outline.
 - **Secondary / Ghost:** white or transparent surface with Divider border; tonal fill on hover.
 
 ### Chips
 - **Style:** compact tabs or segmented controls with normal-case labels.
-- **State:** selection uses a sage underline or Soft Sage fill, not a floating pill collection.
+- **State:** selection uses an indigo underline or Soft Indigo fill, not a floating pill collection.
 
 ### Cards / Containers
-- **Corner Style:** `8px` maximum for working surfaces.
+- **Corner Style:** `6px` maximum for working surfaces.
 - **Background:** Surface on Canvas.
 - **Shadow Strategy:** none at rest.
 - **Border:** one-pixel Divider.
 - **Internal Padding:** `12px`, `16px`, or `24px` according to density.
 
 ### Inputs / Fields
-- **Style:** Surface background, one-pixel Divider border, `8px` radius, minimum `44px` height.
-- **Focus:** Sage border plus visible focus outline.
+- **Style:** Surface background, one-pixel Divider border, `4px` radius, minimum `44px` height.
+- **Focus:** Indigo border plus visible focus outline.
 - **Error / Disabled:** Tomato for errors; disabled controls retain shape and use reduced opacity.
 
 ### Recipe editor density
@@ -165,12 +166,12 @@ Picknic is flat by default. Depth comes from canvas-versus-surface tone, one-pix
 - The paste panel has a 4px top inset and 16px side and bottom insets.
 
 ### Navigation
-- Desktop uses a quiet 196px left rail with icons and text. Active navigation uses Soft Sage. At 900px and below, navigation becomes a fixed five-item bottom bar with icon-above-label targets.
+- Desktop uses a quiet 196px left rail with icons and text. Active navigation uses an indigo rule and a neutral fill. At 900px and below, navigation becomes a fixed five-item bottom bar with icon-above-label targets.
 
 ### Week Table
 - Seven day columns form one continuous bordered table, not seven independent cards.
-- Dinner is the default visible slot; additional meals reveal progressively.
-- On narrow layouts the table scrolls horizontally with stable day widths and touch-friendly snapping.
+- The week shows its planned meals. The recipe picker opens for a selected day and meal.
+- On narrow layouts the days wrap into rows.
 
 ### Cook Session
 - Keep the app sidebar visible on Cook pages and during a cook session. On mobile, keep the shared bottom navigation. Ingredients and servings occupy a separate panel inside the Cook workspace; recipe title, restrained image, and numbered steps dominate the main area.

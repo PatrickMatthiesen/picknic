@@ -1,7 +1,13 @@
 export type RecipeSearchFilters = { q?: string; maxMinutes?: string; diet?: string; exclude?: string };
+export type RecipeSearchParams = RecipeSearchFilters & { timeChoice?: string; dietChoice?: string; filterAction?: string };
 type SearchableRecipe = { title: string; tags: string[]; totalTimeMinutes: number | null; ingredients: { name: string }[] };
-export function readSearchFilters(search: RecipeSearchFilters): RecipeSearchFilters {
-  return { q: search.q?.trim(), maxMinutes: search.maxMinutes, diet: search.diet?.trim(), exclude: search.exclude?.trim() };
+export function readSearchFilters(search: RecipeSearchParams): RecipeSearchFilters {
+  const q = search.q?.trim();
+  if (search.filterAction === "clear") return { q };
+  const maxMinutes = search.timeChoice === "custom" ? search.maxMinutes : search.timeChoice ?? search.maxMinutes;
+  const diet = search.dietChoice === "custom" ? search.diet : search.dietChoice ?? search.diet;
+  const minutes = Number(maxMinutes);
+  return { q, maxMinutes: Number.isFinite(minutes) && minutes > 0 ? maxMinutes : undefined, diet: typeof diet === "string" ? diet.trim() : undefined, exclude: search.exclude?.trim() };
 }
 export function matchesRecipeSearch(recipe: SearchableRecipe, filters: RecipeSearchFilters) {
   const normalize = (value: string) => value.toLocaleLowerCase();

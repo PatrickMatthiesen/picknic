@@ -6,10 +6,10 @@ import { isValidElement, type ReactNode } from "react";
 // helpers used by the profile-linking tests in the main test suite.
 const prisma = {
   $queryRaw: mock(async () => []),
-  recipe: { findMany: mock(), findUniqueOrThrow: mock() },
+  recipe: { findFirst: mock(), findMany: mock(), findUniqueOrThrow: mock() },
   recipeRevision: { findFirst: mock(), findUnique: mock(), findMany: mock(), create: mock() },
   mealPlan: { findUnique: mock(), upsert: mock() },
-  mealPlanEntry: { create: mock(), updateMany: mock() },
+  mealPlanEntry: { create: mock(), findMany: mock(), updateMany: mock() },
   mealPlanTemplate: { findMany: mock() },
   pantryItem: { findFirst: mock(), findMany: mock(), update: mock() },
   shoppingList: { upsert: mock(), findFirst: mock(), findUnique: mock(), create: mock() },
@@ -36,6 +36,7 @@ const { PATCH: updatePantry } = await import("../src/app/api/pantry/[pantryItemI
 const { generateShoppingListForWeek, getShoppingListForWeek } = await import("../src/lib/shopping-list-service");
 const { default: ShoppingListPage } = await import("../src/app/shopping-list/page");
 const { default: PlannerPage } = await import("../src/app/planner/page");
+const { default: CookPage } = await import("../src/app/cook/page");
 
 beforeEach(() => {
   for (const model of Object.values(prisma)) {
@@ -313,7 +314,9 @@ describe("selected shopping week", () => {
     prisma.shoppingList.findFirst.mockResolvedValue({ id: "future-list", items: [{ id: "milk", ingredientName: "Milk", quantity: 1, unit: "cup", unitId: "us-cup", status: "PENDING", source: "MANUAL" }] });
     prisma.shoppingListItem.findFirst.mockResolvedValue({ unitId: "us-cup" });
     const page = await ShoppingListPage({ searchParams: Promise.resolve({ list: "standalone" }) });
-    const form = elements(page).find(element => element.props.className === "shopping-edit-row")!;
+    const form = elements(page).find(element => element.type === "form" &&
+      elements(element.props.children as ReactNode).some(field => field.props.name === "quantity") &&
+      elements(element.props.children as ReactNode).some(field => field.props.name === "itemId"))!;
     const action = form.props.action as (data: FormData) => Promise<void>;
     const data = new FormData();
     data.set("itemId", "milk"); data.set("ingredientName", "Whole milk"); data.set("quantity", "2"); data.set("unit", "cups");
@@ -353,11 +356,12 @@ describe("selected shopping week", () => {
     prisma.shoppingList.findFirst.mockResolvedValue({ id: "standalone", items: [] });
     expect(await getShoppingListForWeek("reader-household", new Date("2030-04-01"))).toBeNull();
     const page = await ShoppingListPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
-    const form = elements(page).find(element => element.props.className === "shopping-add-row")!;
+    const form = elements(page).find(element => element.type === "form" &&
+      elements(element.props.children as ReactNode).some(field => field.props.name === "ingredientName"))!;
     const data = new FormData(); data.set("ingredientName", "Bread"); data.set("quantity", "1");
     let redirectError: unknown;
     try { await (form.props.action as (data: FormData) => Promise<void>)(data); } catch (error) { redirectError = error; }
-    expect(redirectError).toMatchObject({ digest: expect.stringContaining("/shopping-list?list=standalone&saved=added") });
+    expect(redirectError).toMatchObject({ digest: expect.stringContaining("/shopping-list?week=2030-04-01&list=standalone&saved=added") });
     expect(prisma.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({ shoppingListId: "standalone", ingredientName: "Bread", source: "MANUAL" });
   });
 
@@ -374,7 +378,40 @@ describe("selected shopping week", () => {
     prisma.mealPlanTemplate.findMany.mockResolvedValue([]);
     const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
     expect(elements(page).map((element) => element.props.href)).toContain("/shopping-list?week=2030-04-01");
+    expect(elements(page).some(element => element.props["aria-label"] === "Recipe choices")).toBe(false);
   });
+
+  test("a recipe link opens the picker for the requested meal and keeps the filters", async () => {
+    const page = await PlannerPage({ searchParams: Promise.resolve({
+      day: "2030-04-04", meal: "LUNCH", q: "soup", dietChoice: "vegetarian", timeChoice: "custom", maxMinutes: "42",
+    }) });
+    const children = elements(page);
+    expect(children.some(element => element.props["aria-label"] === "Weekly meal plan")).toBe(false);
+    expect(children.some(element => element.props["aria-label"] === "Recipe choices")).toBe(true);
+    expect(children.some(element => element.props.name === "week" && element.props.value === "2030-04-01")).toBe(true);
+    expect(children.some(element => element.props.query === "soup" && element.props.diet === "vegetarian" && element.props.maxMinutes === "42")).toBe(true);
+  });
+});
+
+test("both Cook entry points preserve authored component identities and positions", async () => {
+  const components = ["Filling", "Dough", "Filling"].map((component, index) => ({
+    component, componentId: `component-${index}`, componentPosition: index + 1,
+  }));
+  const steps = components.map((component, index) => ({ ...component, id: `step-${index}`, position: index + 1 }));
+  const ingredients = components.map((component, index) => ({
+    ...component, id: `ingredient-${index}`, quantity: new Prisma.Decimal(index + 1),
+  }));
+  const recipe = { id: "recipe", householdId: "reader-household", deletedAt: null, steps, ingredients };
+  prisma.recipe.findFirst.mockResolvedValue(recipe);
+  prisma.mealPlanEntry.findMany.mockResolvedValue([{ id: "entry", recipeId: recipe.id, recipe, recipeRevision: null }]);
+
+  for (const selection of [{ recipe: recipe.id }, { entry: "entry" }]) {
+    const page = await CookPage({ searchParams: Promise.resolve(selection) });
+    const display = elements(page)[0]?.props.recipe as { steps: typeof steps; ingredients: Array<(typeof components)[number] & { quantity: number }> };
+    expect(display.steps).toMatchObject(steps);
+    expect(display.ingredients.map(({ componentId, componentPosition, quantity }) => ({ componentId, componentPosition, quantity })))
+      .toEqual(ingredients.map(({ componentId, componentPosition, quantity }) => ({ componentId, componentPosition, quantity: Number(quantity) })));
+  }
 });
 
 describe("shopping list freshness and planned servings", () => {
