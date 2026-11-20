@@ -666,3 +666,7 @@ fieldset:has(input[value="custom"]:checked) .recipe-filter-custom { display: gri
 
 
 .household-error { color:var(--danger); }
+label.capture-camera-picker { display: none; }
+@media (any-pointer: coarse) {
+  label.capture-camera-picker { display: inline-flex; }
+}

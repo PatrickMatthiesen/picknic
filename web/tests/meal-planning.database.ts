@@ -18,6 +18,10 @@ mock.module("@/lib/auth-context", () => ({
   resolveActiveMembership: async () => ({ householdId: readerHouseholdId, role: "OWNER" }),
 }));
 const { POST: planMeals } = await import("../src/app/api/meal-plans/route");
+const { POST: saveRecipe } = await import("../src/app/api/recipes/route");
+const { GET: listCaptures } = await import("../src/app/api/recipes/captures/route");
+const { DELETE: deleteCapture } = await import("../src/app/api/recipes/captures/[captureId]/route");
+const { GET: getCapturePhoto } = await import("../src/app/api/recipes/captures/[captureId]/photos/[photoId]/route");
 const { createRecipeRevision } = await import("../src/lib/recipe-revisions");
 const { generateShoppingListForWeek, getShoppingListForWeek } = await import("../src/lib/shopping-list-service");
 const { loadRecipeSearchPage } = await import("../src/lib/recipe-search-service");
@@ -58,6 +62,55 @@ function planMany(recipeIds: string[], weekStart = "2030-04-01", date = "2030-04
 const selectedWeek = new Date("2030-04-01");
 const generate = () => generateShoppingListForWeek({ householdId: readerHouseholdId, userId: readerId, weekStart: selectedWeek });
 const readList = () => getShoppingListForWeek(readerHouseholdId, selectedWeek);
+
+test("recipe captures scope photos to the uploader's active household and save only once", async () => {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  const title = "Recipe from a photo";
+  const reviewedTitle = "Reviewed recipe from a photo";
+  const seedCapture = (userId: string, householdId: string) => prisma.recipeCapture.create({
+    data: {
+      userId, householdId, status: "READY", draft: { title },
+      photos: { create: { bytes, contentType: "image/jpeg", position: 0 } },
+    },
+    include: { photos: true },
+  });
+  const capture = await seedCapture(readerId, readerHouseholdId);
+  const otherUploader = await seedCapture(authorId, readerHouseholdId);
+  const otherHousehold = await seedCapture(readerId, authorHouseholdId);
+  const list = await listCaptures();
+  expect((await list.json()).data.map(({ id }: { id: string }) => id)).toEqual([capture.id]);
+
+  const photo = (captureId: string, photoId: string) => getCapturePhoto(
+    new Request(`http://localhost/api/recipes/captures/${captureId}/photos/${photoId}`),
+    { params: Promise.resolve({ captureId, photoId }) },
+  );
+  const response = await photo(capture.id, capture.photos[0]!.id);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+  expect((await photo(otherUploader.id, otherUploader.photos[0]!.id)).status).toBe(404);
+  expect((await photo(otherHousehold.id, otherHousehold.photos[0]!.id)).status).toBe(404);
+
+  const save = (servings: number | null = 4) => saveRecipe(new Request("http://localhost/api/recipes", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ captureId: capture.id, title: reviewedTitle, servings }),
+  }));
+  expect((await save(null)).status).toBe(400);
+  const attempts = await Promise.all([save(), save()]);
+  expect(attempts.map(({ status }) => status).sort()).toEqual([201, 409]);
+  const { data: recipe } = await attempts.find(({ status }) => status === 201)!.json();
+  expect(await prisma.recipe.count({ where: { householdId: readerHouseholdId, title: reviewedTitle } })).toBe(1);
+  expect((await prisma.recipeCapture.findUnique({ where: { id: capture.id } }))?.savedRecipeId).toBe(recipe.id);
+  expect((await (await listCaptures()).json()).data[0]).toMatchObject({ id: capture.id, title: reviewedTitle });
+
+  const deletion = await deleteCapture(
+    new Request(`http://localhost/api/recipes/captures/${capture.id}`, { method: "DELETE" }),
+    { params: Promise.resolve({ captureId: capture.id }) },
+  );
+  expect(deletion.status).toBe(204);
+  expect(await prisma.recipeCapturePhoto.count({ where: { captureId: capture.id } })).toBe(0);
+  expect(await prisma.recipe.count({ where: { id: recipe.id } })).toBe(1);
+});
 
 test("plan a future week, shop, change servings, refresh, and retain progress", async () => {
   const recipe = await prisma.recipe.create({ data: {

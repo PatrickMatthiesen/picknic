@@ -65,6 +65,11 @@ lists prompt for one refresh after upgrading to establish their plan history.
 
 ## Optional AI recipe import
 
+Open **Photo inbox** in Recipes to take or select up to four photos of one recipe.
+Picknic stores the source photos in your private inbox and sends them to the configured
+AI model for extraction. Review the draft and any flagged details before saving it as a
+recipe. Removing a capture deletes its source photos and keeps any recipe you saved from it.
+
 AI-assisted recipe parsing uses the `ai-proxy` CLIProxyAPI resource in Aspire. Picknic
 uses the provider-neutral `AI_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` settings and defaults
 to `gpt-5.6-luna`.
@@ -92,7 +97,8 @@ you intend to pay for their use.
 
 Imports are limited to 50,000 input characters and 8,192 completion tokens, with a 60-second
 provider timeout and no automatic retries. These bound an individual request, not total
-spending; provider billing or subscription quotas still apply.
+spending; provider billing or subscription quotas still apply. Photo extraction uses the
+configured default model, which must accept image inputs.
 
 ## Validate changes
 
@@ -134,3 +140,4 @@ docker restart "$ai_proxy_id"
 ```
 
 The Docker host needs Docker 28 or newer with Compose, and the tailnet policy must allow `tag:ci` to reach it over SSH. Configure the reverse proxy to forward the public HTTPS site to `http://<docker-host>:5333`, and configure the same callback URL plus the public sign-in and logout URLs in the WorkOS environment.
+Allow 17 MiB request bodies on `/api/recipes/captures` so multipart uploads can carry up to 16 MiB of photos.

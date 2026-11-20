@@ -1,5 +1,5 @@
 import { RecipeVisibility } from "@prisma/client";
-import { Bookmark, FolderPlus, Globe2, Plus } from "lucide-react";
+import { Bookmark, Camera, FolderPlus, Globe2, Plus } from "lucide-react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -140,7 +140,10 @@ export async function RecipesHomeBody({ searchParams, currentPath, searchActionP
       currentPath={currentPath}
       title="Recipes"
       subtitle="Keep the recipes you love, improve them over time, and find something new for this week."
-      headerChildren={<Link className="app-theme-primary-button inline-flex min-h-11 items-center gap-2 px-4 py-2 text-sm" href="/recipes/new"><Plus aria-hidden="true" size={17} /> Create recipe</Link>}
+      headerChildren={<>
+        <Link className="app-theme-secondary-button inline-flex min-h-11 items-center gap-2 px-4 py-2 text-sm" href="/recipes/captures"><Camera aria-hidden="true" size={17} /> Photo inbox</Link>
+        <Link className="app-theme-primary-button inline-flex min-h-11 items-center gap-2 px-4 py-2 text-sm" href="/recipes/new"><Plus aria-hidden="true" size={17} /> Create recipe</Link>
+      </>}
     >
       <RecipeSearchForm action={searchActionPath} query={query} maxMinutes={search.maxMinutes} diet={search.diet} exclude={search.exclude} presetTimes>
         <input name="view" type="hidden" value={view} />

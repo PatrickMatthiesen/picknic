@@ -1,10 +1,75 @@
 import { describe, expect, test } from "bun:test";
 import {
   normalizeParsedRecipeDraft,
+  parseRecipePhotosWithAi,
   RECIPE_EXTRACTION_INSTRUCTIONS,
   RECIPE_REASONING_EFFORT,
   recipeResponseFormat,
 } from "./recipe-parser";
+
+test("photo extraction sends images in order and preserves unreadable quantities and warnings", async () => {
+  const config = {
+    AI_API_KEY: "fixture",
+    AI_BASE_URL: "",
+    AI_MODEL: "photo-test-model",
+    AI_ALLOWED_MODELS: "",
+  };
+  const previousConfig = Object.keys(config).map((key) => [key, process.env[key]] as const);
+  const requests: unknown[] = [];
+  const provider = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/v1/models") {
+        return Response.json({ data: [{ id: config.AI_MODEL }] });
+      }
+      requests.push(await request.json());
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify({
+          recipe: {
+            title: "Pear tart",
+            servings: null,
+            imageUrl: "https://example.com/ignored",
+            ingredientComponents: [{ ingredients: [{ name: "flour", quantity: null, unit: "g" }] }],
+          },
+          warnings: [" The amount of flour is unreadable. "],
+        }) } }],
+      });
+    },
+  });
+  try {
+    Object.assign(process.env, config, { AI_BASE_URL: new URL("/v1", provider.url).href });
+    const result = await parseRecipePhotosWithAi([
+      { bytes: new Uint8Array([1, 2]), contentType: "image/jpeg" },
+      { bytes: new Uint8Array([3, 4]), contentType: "image/png" },
+    ]);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      model: config.AI_MODEL,
+      response_format: { type: "json_schema", json_schema: { strict: true } },
+      messages: [
+        { role: "system" },
+        { role: "user", content: [
+          { type: "text" },
+          { type: "image_url", image_url: { url: "data:image/jpeg;base64,AQI=" } },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AwQ=" } },
+        ] },
+      ],
+    });
+    expect(result.draft.title).toBe("Pear tart");
+    expect(result.draft.servings).toBeNull();
+    expect(result.draft.imageUrl).toBeNull();
+    expect(result.draft.ingredientComponents[0]?.ingredients[0]?.quantity).toBeNull();
+    expect(result.warnings).toEqual(["The amount of flour is unreadable."]);
+  } finally {
+    provider.stop(true);
+    for (const [key, value] of previousConfig) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
 
 describe("AI recipe import contract", () => {
   test("preserves the complete importable recipe shape", () => {

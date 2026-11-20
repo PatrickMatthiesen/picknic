@@ -39,6 +39,13 @@ enum RecipeVisibility {
   PUBLIC
 }
 
+enum RecipeCaptureStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
 enum ShoppingItemSource {
   AUTO
   MANUAL
@@ -60,6 +67,7 @@ model User {
   mealPlanTemplates MealPlanTemplate[]
   pantryItems       PantryItem[]
   recipes           Recipe[]
+  recipeCaptures    RecipeCapture[]
   recipeRevisions   RecipeRevision[]
   savedRecipes      SavedRecipe[]
   recipeCollections RecipeCollection[]
@@ -84,6 +92,7 @@ model Household {
   mealPlanTemplates    MealPlanTemplate[]
   pantryItems          PantryItem[]
   recipes              Recipe[]
+  recipeCaptures       RecipeCapture[]
   shoppingLists        ShoppingList[]
   invitationAttempts   HouseholdInvitationAttempt[]
   createdAt            DateTime          @default(now())
@@ -145,10 +154,41 @@ model Recipe {
   collectionItems  RecipeCollectionItem[]
   plannedIn        MealPlanEntry[]
   listItems        ShoppingListItem[]
+  capture          RecipeCapture?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
   @@index([sourceRecipeId])
+}
+
+model RecipeCapture {
+  id            String              @id @default(cuid())
+  userId        String
+  householdId   String
+  status        RecipeCaptureStatus @default(PENDING)
+  draft         Json?
+  warnings      String[]            @default([])
+  savedRecipeId String?             @unique
+  attemptId     String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household     Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  savedRecipe   Recipe?             @relation(fields: [savedRecipeId], references: [id], onDelete: SetNull)
+  photos        RecipeCapturePhoto[]
+
+  @@index([userId, householdId, createdAt])
+}
+
+model RecipeCapturePhoto {
+  id          String        @id @default(cuid())
+  captureId   String
+  contentType String
+  bytes       Bytes
+  position    Int
+  capture     RecipeCapture @relation(fields: [captureId], references: [id], onDelete: Cascade)
+
+  @@unique([captureId, position])
 }
 
 model RecipeRevision {

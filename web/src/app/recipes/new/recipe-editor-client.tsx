@@ -26,12 +26,14 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { UnitCombobox } from "@/app/_components/unit-combobox";
 import { getSupportedRecipeImageUrl } from "@/lib/recipe-display";
 import { MAX_RECIPE_IMPORT_CHARACTERS } from "@/lib/ai-model";
-import { MAX_RECIPE_MINUTES } from "@/lib/recipe-input";
+import { isRecipeServingCount, MAX_RECIPE_MINUTES, MAX_RECIPE_SERVINGS } from "@/lib/recipe-input";
 import { normalizeRecipeFileUnits, validatePicknicRecipeFile, type PicknicRecipeFile } from "@/lib/recipe-import";
+import type { ParsedPhotoRecipeDraft, ParsedRecipeDraft } from "@/lib/recipe-parser";
 import {
   inferMeasurementSystem,
   inferSourceMeasurementSystem,
   normalizeUnitInput,
+  resolveUnambiguousUnit,
   type MeasurementSystem,
 } from "@/lib/units";
 
@@ -60,7 +62,7 @@ export type RecipeDraft = {
   title: string;
   description: string;
   notes: string;
-  servings: number;
+  servings: number | null;
   totalTimeMinutes: number | null;
   tags: string[];
   imageUrl: string;
@@ -95,6 +97,54 @@ const EMPTY_DRAFT: RecipeDraft = {
 
 function createId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+}
+
+function draftFromParsedRecipe(
+  parsed: ParsedPhotoRecipeDraft,
+  current: RecipeDraft,
+  fallbackSystem: MeasurementSystem | null,
+  idFor = createId,
+): RecipeDraft {
+  const system = parsed.measurementSystem ?? (fallbackSystem && inferSourceMeasurementSystem(
+    parsed.ingredientComponents.flatMap((component) => component.ingredients.map((ingredient) => ingredient.unit)),
+    fallbackSystem,
+  ));
+  return {
+    ...current,
+    title: parsed.title,
+    description: parsed.description,
+    notes: parsed.notes,
+    servings: parsed.servings,
+    totalTimeMinutes: parsed.totalTimeMinutes,
+    tags: parsed.tags,
+    imageUrl: parsed.imageUrl ?? current.imageUrl,
+    ingredientComponents: parsed.ingredientComponents.map((component, componentIndex) => ({
+      id: idFor(`ingredient-component-${componentIndex}`),
+      name: component.name ?? "",
+      ingredients: component.ingredients.map((ingredient, ingredientIndex) => {
+        const unit = system ? normalizeUnitInput(ingredient.unit, system) : unambiguousPhotoUnit(ingredient.unit);
+        return {
+          id: idFor(`ingredient-${componentIndex}-${ingredientIndex}`),
+          ...ingredient,
+          ...unit,
+          notes: ingredient.notes ?? "",
+        };
+      }),
+    })),
+    instructionComponents: parsed.instructionComponents.map((component, componentIndex) => ({
+      id: idFor(`instruction-component-${componentIndex}`),
+      name: component.name ?? "",
+      steps: component.steps.map((step, stepIndex) => ({
+        id: idFor(`step-${componentIndex}-${stepIndex}`),
+        ...step,
+      })),
+    })),
+  };
+}
+
+function unambiguousPhotoUnit(unit: string | null) {
+  const definition = resolveUnambiguousUnit(unit);
+  return { unit: definition?.symbol ?? unit, unitId: definition?.id ?? null };
 }
 
 function ingredientBuffer(): IngredientDraft {
@@ -192,6 +242,12 @@ type RecipeEditorClientProps = {
   aiRecipeImportModel?: string | null;
   aiRecipeImportModels?: string[];
   initialDraft?: RecipeDraft;
+  photoCapture?: {
+    id: string;
+    draft: ParsedPhotoRecipeDraft;
+    warnings: string[];
+    photoIds: string[];
+  };
   recipeId?: string;
 };
 
@@ -199,12 +255,16 @@ export function RecipeEditorClient({
   aiRecipeImportEnabled = false,
   aiRecipeImportModel = null,
   aiRecipeImportModels = [],
-  initialDraft = EMPTY_DRAFT,
+  initialDraft: suppliedDraft = EMPTY_DRAFT,
+  photoCapture,
   recipeId,
 }: RecipeEditorClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const storageKey = `picknic:recipe-draft:${recipeId ?? "new"}`;
+  const storageKey = photoCapture ? null : `picknic:recipe-draft:${recipeId ?? "new"}`;
+  const initialDraft = useMemo(() => photoCapture
+    ? draftFromParsedRecipe(photoCapture.draft, suppliedDraft, null, (part) => `${photoCapture.id}-${part}`)
+    : suppliedDraft, [photoCapture, suppliedDraft]);
   const preparedInitialDraft = useMemo(() => prepareDraft(initialDraft), [initialDraft]);
   const [draft, setDraft] = useState(preparedInitialDraft);
   const [tagsText, setTagsText] = useState(initialDraft.tags.join(", "));
@@ -217,7 +277,7 @@ export function RecipeEditorClient({
   const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draftReady, setDraftReady] = useState(false);
+  const [draftReady, setDraftReady] = useState(storageKey === null);
   const [savedLocallyAt, setSavedLocallyAt] = useState<string | null>(null);
   const [restoredDraftAt, setRestoredDraftAt] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
@@ -232,6 +292,7 @@ export function RecipeEditorClient({
   }, []);
 
   useEffect(() => {
+    if (!storageKey) return;
     let active = true;
     const timer = setTimeout(() => {
       try {
@@ -258,7 +319,7 @@ export function RecipeEditorClient({
   }, [preparedInitialDraft, storageKey]);
 
   useEffect(() => {
-    if (!draftReady) return;
+    if (!draftReady || !storageKey) return;
     if (JSON.stringify(meaningfulDraft(draft)) === JSON.stringify(meaningfulDraft(preparedInitialDraft))) {
       window.localStorage.removeItem(storageKey);
       const timer = setTimeout(() => setSavedLocallyAt(null), 0);
@@ -289,13 +350,13 @@ export function RecipeEditorClient({
   function clearRecipe() {
     const previousDraft = draft;
     const previousTags = tagsText;
-    window.localStorage.removeItem(storageKey);
+    if (storageKey) window.localStorage.removeItem(storageKey);
     setSavedLocallyAt(null);
     setRestoredDraftAt(null);
     setDraft(preparedInitialDraft);
     setTagsText(initialDraft.tags.join(", "));
     actionsMenuRef.current?.removeAttribute("open");
-    showUndo(recipeId ? "Local changes discarded" : "Recipe cleared", () => {
+    showUndo(recipeId || photoCapture ? "Local changes discarded" : "Recipe cleared", () => {
       setDraft(previousDraft);
       setTagsText(previousTags);
     });
@@ -311,67 +372,10 @@ export function RecipeEditorClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: sourceText, model: selectedAiModel }),
       });
-      const payload = (await response.json()) as {
-        data?: {
-          title: string;
-          description: string;
-          notes: string;
-          servings: number;
-          totalTimeMinutes: number | null;
-          tags: string[];
-          measurementSystem: MeasurementSystem | null;
-          imageUrl: string | null;
-          ingredientComponents: Array<{
-            name: string | null;
-            ingredients: Array<{ name: string; quantity: number | null; unit: string | null; notes: string | null }>;
-          }>;
-          instructionComponents: Array<{
-            name: string | null;
-            steps: Array<{ instruction: string; durationMinutes: number | null; advanceNotice: boolean }>;
-          }>;
-        };
-        error?: string;
-      };
+      const payload = (await response.json()) as { data?: ParsedRecipeDraft; error?: string };
       if (!response.ok || !payload.data) throw new Error(payload.error ?? "We could not parse that recipe.");
-
       const parsed = payload.data;
-      const parsedSystem = parsed.measurementSystem
-        ?? inferSourceMeasurementSystem(
-          parsed.ingredientComponents.flatMap((component) => component.ingredients.map((ingredient) => ingredient.unit)),
-          authoringSystem,
-        );
-      const nextDraft: RecipeDraft = {
-        ...draft,
-        title: parsed.title,
-        description: parsed.description,
-        notes: parsed.notes,
-        servings: parsed.servings,
-        totalTimeMinutes: parsed.totalTimeMinutes,
-        tags: parsed.tags,
-        imageUrl: parsed.imageUrl ?? draft.imageUrl,
-        ingredientComponents: parsed.ingredientComponents.map((component) => ({
-          id: createId("ingredient-component"),
-          name: component.name ?? "",
-          ingredients: component.ingredients.map((ingredient) => {
-            const normalizedUnit = normalizeUnitInput(ingredient.unit, parsedSystem);
-            return {
-              id: createId("ingredient"),
-              ...ingredient,
-              ...normalizedUnit,
-              notes: ingredient.notes ?? "",
-            };
-          }),
-        })),
-        instructionComponents: parsed.instructionComponents.map((component) => ({
-          id: createId("instruction-component"),
-          name: component.name ?? "",
-          steps: component.steps.map((step) => ({
-            id: createId("step"),
-            ...step,
-          })),
-        })),
-      };
-      setDraft(prepareDraft(nextDraft));
+      setDraft(prepareDraft(draftFromParsedRecipe(parsed, draft, authoringSystem)));
       setTagsText(parsed.tags.join(", "));
       setShowImport(false);
     } catch (parseError) {
@@ -411,6 +415,10 @@ export function RecipeEditorClient({
   }
 
   function exportRecipeJson() {
+    if (draft.servings === null) {
+      setError("Enter the number of servings before exporting.");
+      return;
+    }
     const blob = new Blob([JSON.stringify({ format: "picknic-recipe-v1", recipe: meaningfulDraft(draft) }, null, 2)], { type: "application/json" });
     const href = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -544,11 +552,12 @@ export function RecipeEditorClient({
   }
 
   async function saveRecipe() {
-    if (!draft.title.trim()) return;
+    if (!draft.title.trim() || draft.servings === null) return;
     setError(null);
     setIsSaving(true);
     const payload = {
       ...draft,
+      captureId: photoCapture?.id,
       ingredients: draft.ingredientComponents.flatMap((component, componentIndex) => component.ingredients
         .filter((ingredient) => !ingredient.isBuffer && ingredient.name.trim())
         .map((ingredient) => ({
@@ -580,7 +589,7 @@ export function RecipeEditorClient({
       });
       const result = (await response.json()) as { data?: { id: string }; error?: string };
       if (!response.ok || !result.data) throw new Error(result.error ?? "We could not save this recipe.");
-      window.localStorage.removeItem(storageKey);
+      if (storageKey) window.localStorage.removeItem(storageKey);
       router.push(`/recipes/${result.data.id}`);
       router.refresh();
     } catch (saveError) {
@@ -601,15 +610,63 @@ export function RecipeEditorClient({
     <div className="recipe-authoring">
       <div className="recipe-authoring-main">
         <header className="recipe-authoring-header">
-          <Link className="recipe-authoring-back" href="/recipes"><ArrowLeft aria-hidden="true" size={18} /> <span>{recipeId ? "Edit recipe" : "Create recipe"}</span></Link>
+          <Link className="recipe-authoring-back" href={photoCapture ? "/recipes/captures" : "/recipes"}><ArrowLeft aria-hidden="true" size={18} /> <span>{photoCapture ? "Capture inbox" : recipeId ? "Edit recipe" : "Create recipe"}</span></Link>
           <div className="recipe-authoring-header-actions">
-            <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Import recipe</button>
+            {!photoCapture ? <button className="recipe-paste-trigger" onClick={() => setShowImport((current) => !current)} type="button"><Sparkles aria-hidden="true" size={16} /> Import recipe</button> : null}
             <details className="recipe-authoring-actions-menu" ref={actionsMenuRef}>
               <summary aria-label="More recipe actions" title="More recipe actions"><MoreHorizontal aria-hidden="true" size={18} /></summary>
-              <div><button onClick={clearRecipe} type="button"><Trash2 aria-hidden="true" size={16} /> {recipeId ? "Discard local changes" : "Clear recipe"}</button></div>
+              <div><button onClick={clearRecipe} type="button"><Trash2 aria-hidden="true" size={16} /> {recipeId || photoCapture ? "Discard local changes" : "Clear recipe"}</button></div>
             </details>
           </div>
         </header>
+
+        {photoCapture ? (
+          <section aria-labelledby="photo-review" className="app-theme-card my-4 grid gap-3 p-4">
+            <h2 className="font-semibold" id="photo-review">Review your photo import</h2>
+            <p className="app-theme-muted text-sm">Edits stay on this page until you save the recipe.</p>
+            {photoCapture.warnings.length ? (
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {photoCapture.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+              </ul>
+            ) : null}
+            <div className="grid gap-1 text-sm">
+              <label className="font-medium" htmlFor="photo-review-servings">Servings</label>
+              <input
+                aria-describedby={draft.servings === null ? "photo-review-servings-help" : undefined}
+                className="app-theme-input w-24 px-3"
+                id="photo-review-servings"
+                inputMode="numeric"
+                max={MAX_RECIPE_SERVINGS}
+                min={1}
+                onChange={(event) => {
+                  const count = event.target.valueAsNumber;
+                  setDraft((current) => ({ ...current, servings: isRecipeServingCount(count) ? count : null }));
+                }}
+                required
+                step={1}
+                type="number"
+                value={draft.servings ?? ""}
+              />
+              {draft.servings === null ? <p className="app-theme-muted" id="photo-review-servings-help">Enter a serving count before saving.</p> : null}
+            </div>
+            <details>
+              <summary className="app-theme-link min-h-11 cursor-pointer px-3 py-3 text-sm">View source photos</summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {photoCapture.photoIds.map((photoId, index) => (
+                  <Image
+                    alt={`Source photo ${index + 1}`}
+                    className="h-auto w-full"
+                    height={360}
+                    key={photoId}
+                    src={`/api/recipes/captures/${photoCapture.id}/photos/${photoId}`}
+                    unoptimized
+                    width={480}
+                  />
+                ))}
+              </div>
+            </details>
+          </section>
+        ) : null}
 
         <section className="recipe-identity">
           <label className="sr-only" htmlFor="recipe-title">Recipe title</label>
@@ -618,7 +675,7 @@ export function RecipeEditorClient({
           <textarea id="recipe-description" maxLength={600} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Describe what makes this recipe worth cooking…" rows={2} value={draft.description} />
         </section>
 
-        {showImport ? (
+        {showImport && !photoCapture ? (
           <section className="recipe-import-panel">
             <div className="recipe-import-heading">
               <label htmlFor="recipe-url">Import a recipe page URL</label>
@@ -629,12 +686,24 @@ export function RecipeEditorClient({
               <input id="recipe-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://example.com/recipe" />
               <button type="button" disabled={isParsing || !sourceUrl.trim()} onClick={loadRecipeUrl}>Read recipe page</button>
             </div>
+            <Link className="app-theme-link text-sm" href="/recipes/captures">Import from photos</Link>
             {aiRecipeImportEnabled ? <><label htmlFor="recipe-source">Or paste recipe text</label><div className="recipe-import-source"><textarea maxLength={MAX_RECIPE_IMPORT_CHARACTERS} id="recipe-source" onChange={(event) => setSourceText(event.target.value)} placeholder="Ingredients and instructions…" rows={3} value={sourceText} /></div><div className="recipe-import-actions"><label className="recipe-model-choice">Model<select disabled={isParsing} onChange={(event) => setSelectedAiModel(event.target.value)} value={selectedAiModel}><option disabled value="">Choose an available model</option>{aiRecipeImportModels.map((model) => <option key={model} value={model}>{model}{model === aiRecipeImportModel ? " (default)" : ""}</option>)}</select></label><button className="app-theme-primary-button" disabled={isParsing || !sourceText.trim() || !selectedAiModel} onClick={parseRecipe} type="button">{isParsing ? "Reading recipe…" : "Fill recipe details"}</button></div></> : null}
           </section>
         ) : null}
 
         <section className="recipe-writing-section">
-          <div className="recipe-writing-heading"><h2>Recipe file</h2><div><label className="recipe-paste-trigger" htmlFor="recipe-json-file">Import Picknic JSON</label><input id="recipe-json-file" accept=".json,application/json" hidden type="file" onChange={(event) => { void importRecipeJson(event.target.files?.[0]); event.currentTarget.value = ""; }} /><button type="button" onClick={exportRecipeJson}>Export Picknic JSON</button></div></div>
+          <div className="recipe-writing-heading">
+            <h2>Recipe file</h2>
+            <div>
+              {!photoCapture ? (
+                <>
+                  <label className="recipe-paste-trigger" htmlFor="recipe-json-file">Import Picknic JSON</label>
+                  <input id="recipe-json-file" accept=".json,application/json" hidden type="file" onChange={(event) => { void importRecipeJson(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+                </>
+              ) : null}
+              <button type="button" onClick={exportRecipeJson}>Export Picknic JSON</button>
+            </div>
+          </div>
           <div className="recipe-writing-heading"><h2>Ingredients</h2><button onClick={addIngredientComponent} type="button"><Plus size={17} /> Add component</button></div>
           <div className="recipe-component-list">
             {draft.ingredientComponents.map((component) => (
@@ -656,7 +725,7 @@ export function RecipeEditorClient({
                     {component.ingredients.map((ingredient, index) => {
                       const fields = <>
                         <input aria-label={`Quantity for ingredient ${index + 1}`} min="0" onChange={(event) => updateIngredient(component.id, ingredient.id, { quantity: event.target.value ? Number(event.target.value) : null })} placeholder="Qty" step="0.01" type="number" value={ingredient.quantity ?? ""} />
-                        <UnitCombobox label={`Unit for ingredient ${index + 1}`} onChange={(unit) => updateIngredient(component.id, ingredient.id, unit)} preferredSystem={authoringSystem} unitId={ingredient.unitId} value={ingredient.unit} />
+                        <UnitCombobox label={`Unit for ingredient ${index + 1}`} onChange={(unit) => updateIngredient(component.id, ingredient.id, unit)} preferredSystem={authoringSystem} rememberRecentUnits={!photoCapture} unitId={ingredient.unitId} value={ingredient.unit} />
                         <input aria-label={`Ingredient ${index + 1}`} maxLength={160} onChange={(event) => updateIngredient(component.id, ingredient.id, { name: event.target.value })} placeholder="Ingredient" value={ingredient.name} />
                         <input aria-label={`Notes for ingredient ${index + 1}`} maxLength={160} onChange={(event) => updateIngredient(component.id, ingredient.id, { notes: event.target.value })} placeholder="Notes" value={ingredient.notes} />
                         {!ingredient.isBuffer ? <button aria-label={`Delete ${ingredient.name || `ingredient ${index + 1}`}`} className="row-delete" onClick={() => deleteIngredient(component.id, ingredient.id)} type="button"><Trash2 size={16} /></button> : <span className="row-action-placeholder" />}
@@ -725,25 +794,27 @@ export function RecipeEditorClient({
         <div className="recipe-setting-fields">
           <label><span>Image URL</span><input onChange={(event) => { setImageFailed(false); setDraft((current) => ({ ...current, imageUrl: event.target.value })); }} placeholder="https://…" type="url" value={draft.imageUrl} /><small>Landscape images work best.</small></label>
           <label><span>Total time</span><div className="setting-icon-input"><Clock3 size={17} /><input max={MAX_RECIPE_MINUTES} min="1" onChange={(event) => setDraft((current) => ({ ...current, totalTimeMinutes: event.target.value === "" ? null : Math.min(MAX_RECIPE_MINUTES, Math.max(1, Number(event.target.value) || 1)) }))} placeholder="Minutes" type="number" value={draft.totalTimeMinutes ?? ""} /><span>min</span></div>{stepMinutes > 0 ? <small>Step times add up to {stepMinutes} min.</small> : null}</label>
-          <fieldset className="servings-setting"><legend>Servings</legend><div><button aria-label="Decrease servings" disabled={draft.servings <= 1} onClick={() => setDraft((current) => ({ ...current, servings: Math.max(1, current.servings - 1) }))} type="button"><Minus size={17} /></button><strong>{draft.servings}</strong><button aria-label="Increase servings" onClick={() => setDraft((current) => ({ ...current, servings: current.servings + 1 }))} type="button"><Plus size={17} /></button></div></fieldset>
+          {!photoCapture && (
+            <fieldset className="servings-setting"><legend>Servings</legend><div><button aria-label="Decrease servings" disabled={(draft.servings ?? 1) <= 1} onClick={() => setDraft((current) => ({ ...current, servings: Math.max(1, (current.servings ?? 1) - 1) }))} type="button"><Minus size={17} /></button><strong>{draft.servings}</strong><button aria-label="Increase servings" onClick={() => setDraft((current) => ({ ...current, servings: (current.servings ?? 1) + 1 }))} type="button"><Plus size={17} /></button></div></fieldset>
+          )}
           <label><span>Tags</span><input maxLength={240} onChange={(event) => { const value = event.target.value; setTagsText(value); setDraft((current) => ({ ...current, tags: value.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 10) })); }} placeholder="Weeknight, chicken, one pot" value={tagsText} /><small>Separate up to 10 tags with commas.</small></label>
           {draft.tags.length ? <div aria-label="Recipe tags" className="recipe-setting-tags">{draft.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
           <label><span>Recipe notes</span><textarea maxLength={2000} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Serving ideas, substitutions, storage…" rows={4} value={draft.notes} /></label>
           <label><span>Visibility</span><div className="setting-select"><span>{draft.visibility === RecipeVisibility.PUBLIC ? <Globe2 size={17} /> : <Users size={17} />}</span><select onChange={(event) => setDraft((current) => ({ ...current, visibility: event.target.value as RecipeVisibility }))} value={draft.visibility}><option value={RecipeVisibility.PRIVATE}>Household only</option><option value={RecipeVisibility.PUBLIC}>Everyone</option></select></div><small>{draft.visibility === RecipeVisibility.PUBLIC ? "Anyone can discover and save this recipe." : "Only people in your household can view it."}</small></label>
         </div>
-        <div className="recipe-local-status">
+        {storageKey ? <div className="recipe-local-status">
           <span>
             <Check size={16} />
             Local draft
             <small>{restoredDraftAt ? `Restored draft from ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(restoredDraftAt))}` : formatDraftTime(savedLocallyAt)}</small>
           </span>
-        </div>
+        </div> : null}
         {error ? <p className="recipe-editor-error" role="alert">{error} Check the fields above and try again.</p> : null}
         <div className="recipe-save-actions">
-          <button className="app-theme-primary-button" disabled={isSaving || !draft.title.trim()} onClick={saveRecipe} type="button">
+          <button className="app-theme-primary-button" disabled={isSaving || !draft.title.trim() || draft.servings === null} onClick={saveRecipe} type="button">
             {isSaving ? "Saving recipe…" : recipeId ? "Save changes" : "Save recipe"}
           </button>
-          <Link href={recipeId ? `/recipes/${recipeId}` : "/recipes"}>Cancel</Link>
+          <Link href={photoCapture ? "/recipes/captures" : recipeId ? `/recipes/${recipeId}` : "/recipes"}>Cancel</Link>
         </div>
       </aside>
 

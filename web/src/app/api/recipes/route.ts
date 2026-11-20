@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAppAuthContext, resolveActiveMembership } from "@/lib/auth-context";
 import { getSupportedRecipeImageUrl } from "@/lib/recipe-display";
-import { normalizeIngredients, normalizeOptionalMinutes, normalizeSteps, normalizeTags, RecipeInputError } from "@/lib/recipe-input";
+import { isRecipeServingCount, normalizeIngredients, normalizeOptionalMinutes, normalizeSteps, normalizeTags, RecipeInputError } from "@/lib/recipe-input";
 import { createRecipeRevision, readRecipeSnapshot } from "@/lib/recipe-revisions";
 
 type RecipePayload = {
+  captureId?: unknown;
   title?: unknown;
   description?: unknown;
   notes?: unknown;
@@ -18,6 +19,8 @@ type RecipePayload = {
   imageUrl?: unknown;
   visibility?: unknown;
 };
+
+class RecipeCaptureUnavailableError extends Error {}
 
 export async function GET(request: Request) {
   const { userId, organizationId } = await requireAppAuthContext();
@@ -69,6 +72,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const payload = (await request.json()) as RecipePayload;
+  const captureId = payload.captureId;
+  if (captureId !== undefined && (typeof captureId !== "string" || !captureId || captureId.length > 128)) {
+    return NextResponse.json({ error: "Invalid photo capture." }, { status: 400 });
+  }
+  if (captureId && !isRecipeServingCount(payload.servings)) {
+    return NextResponse.json({ error: "Enter the number of servings for this photo recipe." }, { status: 400 });
+  }
   const title = typeof payload.title === "string" ? payload.title.trim() : "";
   const imageUrlInput = typeof payload.imageUrl === "string" ? payload.imageUrl.trim() : "";
   const imageUrl = getSupportedRecipeImageUrl(imageUrlInput);
@@ -121,6 +131,13 @@ export async function POST(request: Request) {
         },
       },
     });
+    if (captureId) {
+      const { count } = await tx.recipeCapture.updateMany({
+        where: { id: captureId, userId, householdId: membership.householdId, status: "READY", savedRecipeId: null },
+        data: { savedRecipeId: created.id },
+      });
+      if (!count) throw new RecipeCaptureUnavailableError();
+    }
     if (created.visibility === RecipeVisibility.PUBLIC) await createRecipeRevision(tx, created.id, userId);
     return tx.recipe.findUniqueOrThrow({
       where: { id: created.id },
@@ -129,7 +146,13 @@ export async function POST(request: Request) {
         steps: { orderBy: { position: "asc" } },
       },
     });
+  }).catch((error: unknown) => {
+    if (error instanceof RecipeCaptureUnavailableError) return null;
+    throw error;
   });
 
+  if (!recipe) {
+    return NextResponse.json({ error: "This photo draft is no longer available. Check the capture inbox." }, { status: 409 });
+  }
   return NextResponse.json({ data: recipe }, { status: 201 });
 }

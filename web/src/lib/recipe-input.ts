@@ -1,6 +1,11 @@
 import { getUnitById, resolveUnambiguousUnit } from "./units";
 
 export const MAX_RECIPE_MINUTES = 10_080;
+export const MAX_RECIPE_SERVINGS = 2_147_483_647;
+
+export function isRecipeServingCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= MAX_RECIPE_SERVINGS;
+}
 
 export class RecipeInputError extends Error {}
 
