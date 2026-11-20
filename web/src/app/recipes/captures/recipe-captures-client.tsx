@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowUp, Camera, Images, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useEffectEvent, useState } from "react";
 import type { RecipeCaptureSummary } from "@/lib/recipe-captures";
 import {
   MAX_RECIPE_PHOTO_BYTES,
@@ -116,13 +116,14 @@ export function RecipeCapturesClient({ initialCaptures }: { initialCaptures?: Re
   const [actionError, setActionError] = useState<{ id: string; message: string }>();
   const [busy, setBusy] = useState<string>();
   const [announcement, setAnnouncement] = useState("");
+  const getHasActiveCaptures = useEffectEvent(() => captures?.some(isProcessing) ?? false);
 
   useEffect(() => {
     if (busy) return;
 
     const controller = new AbortController();
     let timer: number | undefined;
-    let hasActiveCaptures = initialCaptures?.some(isProcessing) ?? false;
+    let hasActiveCaptures = getHasActiveCaptures();
 
     async function loadCaptures() {
       try {

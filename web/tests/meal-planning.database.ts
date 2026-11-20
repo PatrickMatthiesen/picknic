@@ -66,6 +66,7 @@ const readList = () => getShoppingListForWeek(readerHouseholdId, selectedWeek);
 test("recipe captures scope photos to the uploader's active household and save only once", async () => {
   const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
   const title = "Recipe from a photo";
+  const reviewedTitle = "Reviewed recipe from a photo";
   const seedCapture = (userId: string, householdId: string) => prisma.recipeCapture.create({
     data: {
       userId, householdId, status: "READY", draft: { title },
@@ -92,14 +93,15 @@ test("recipe captures scope photos to the uploader's active household and save o
 
   const save = (servings: number | null = 4) => saveRecipe(new Request("http://localhost/api/recipes", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ captureId: capture.id, title, servings }),
+    body: JSON.stringify({ captureId: capture.id, title: reviewedTitle, servings }),
   }));
   expect((await save(null)).status).toBe(400);
   const attempts = await Promise.all([save(), save()]);
   expect(attempts.map(({ status }) => status).sort()).toEqual([201, 409]);
   const { data: recipe } = await attempts.find(({ status }) => status === 201)!.json();
-  expect(await prisma.recipe.count({ where: { householdId: readerHouseholdId, title } })).toBe(1);
+  expect(await prisma.recipe.count({ where: { householdId: readerHouseholdId, title: reviewedTitle } })).toBe(1);
   expect((await prisma.recipeCapture.findUnique({ where: { id: capture.id } }))?.savedRecipeId).toBe(recipe.id);
+  expect((await (await listCaptures()).json()).data[0]).toMatchObject({ id: capture.id, title: reviewedTitle });
 
   const deletion = await deleteCapture(
     new Request(`http://localhost/api/recipes/captures/${capture.id}`, { method: "DELETE" }),

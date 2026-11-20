@@ -629,8 +629,28 @@ export function RecipeEditorClient({
                 {photoCapture.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
               </ul>
             ) : null}
+            <div className="grid gap-1 text-sm">
+              <label className="font-medium" htmlFor="photo-review-servings">Servings</label>
+              <input
+                aria-describedby={draft.servings === null ? "photo-review-servings-help" : undefined}
+                className="app-theme-input w-24 px-3"
+                id="photo-review-servings"
+                inputMode="numeric"
+                max={MAX_RECIPE_SERVINGS}
+                min={1}
+                onChange={(event) => {
+                  const count = event.target.valueAsNumber;
+                  setDraft((current) => ({ ...current, servings: isRecipeServingCount(count) ? count : null }));
+                }}
+                required
+                step={1}
+                type="number"
+                value={draft.servings ?? ""}
+              />
+              {draft.servings === null ? <p className="app-theme-muted" id="photo-review-servings-help">Enter a serving count before saving.</p> : null}
+            </div>
             <details>
-              <summary className="app-theme-link cursor-pointer text-sm">View source photos</summary>
+              <summary className="app-theme-link min-h-11 cursor-pointer px-3 py-3 text-sm">View source photos</summary>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {photoCapture.photoIds.map((photoId, index) => (
                   <Image
@@ -774,24 +794,7 @@ export function RecipeEditorClient({
         <div className="recipe-setting-fields">
           <label><span>Image URL</span><input onChange={(event) => { setImageFailed(false); setDraft((current) => ({ ...current, imageUrl: event.target.value })); }} placeholder="https://…" type="url" value={draft.imageUrl} /><small>Landscape images work best.</small></label>
           <label><span>Total time</span><div className="setting-icon-input"><Clock3 size={17} /><input max={MAX_RECIPE_MINUTES} min="1" onChange={(event) => setDraft((current) => ({ ...current, totalTimeMinutes: event.target.value === "" ? null : Math.min(MAX_RECIPE_MINUTES, Math.max(1, Number(event.target.value) || 1)) }))} placeholder="Minutes" type="number" value={draft.totalTimeMinutes ?? ""} /><span>min</span></div>{stepMinutes > 0 ? <small>Step times add up to {stepMinutes} min.</small> : null}</label>
-          {photoCapture ? (
-            <label>
-              <span>Servings</span>
-              <input
-                max={MAX_RECIPE_SERVINGS}
-                min={1}
-                onChange={(event) => {
-                  const count = event.target.valueAsNumber;
-                  setDraft((current) => ({ ...current, servings: isRecipeServingCount(count) ? count : null }));
-                }}
-                required
-                step={1}
-                type="number"
-                value={draft.servings ?? ""}
-              />
-              {draft.servings === null ? <small>Enter a serving count before saving this draft.</small> : null}
-            </label>
-          ) : (
+          {!photoCapture && (
             <fieldset className="servings-setting"><legend>Servings</legend><div><button aria-label="Decrease servings" disabled={(draft.servings ?? 1) <= 1} onClick={() => setDraft((current) => ({ ...current, servings: Math.max(1, (current.servings ?? 1) - 1) }))} type="button"><Minus size={17} /></button><strong>{draft.servings}</strong><button aria-label="Increase servings" onClick={() => setDraft((current) => ({ ...current, servings: (current.servings ?? 1) + 1 }))} type="button"><Plus size={17} /></button></div></fieldset>
           )}
           <label><span>Tags</span><input maxLength={240} onChange={(event) => { const value = event.target.value; setTagsText(value); setDraft((current) => ({ ...current, tags: value.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 10) })); }} placeholder="Weeknight, chicken, one pot" value={tagsText} /><small>Separate up to 10 tags with commas.</small></label>

@@ -13,6 +13,7 @@ const summarySelect = {
   createdAt: true,
   updatedAt: true,
   savedRecipeId: true,
+  savedRecipe: { select: { title: true } },
   photos: { orderBy: { position: "asc" }, select: { id: true } },
 } satisfies Prisma.RecipeCaptureSelect;
 
@@ -35,15 +36,15 @@ function retryCutoff() {
 }
 
 function summarizeCapture(capture: CaptureRecord): RecipeCaptureSummary {
-  const { id, draft, status, createdAt, updatedAt, savedRecipeId, photos } = capture;
-  const title = draft && typeof draft === "object" && !Array.isArray(draft) && typeof draft.title === "string"
+  const { id, draft, status, createdAt, updatedAt, savedRecipeId, savedRecipe, photos } = capture;
+  const extractedTitle = draft && typeof draft === "object" && !Array.isArray(draft) && typeof draft.title === "string"
     ? draft.title
     : null;
   const interrupted = (status === "PENDING" || status === "PROCESSING") && updatedAt <= retryCutoff();
   return {
     id,
     status,
-    title,
+    title: savedRecipe?.title ?? extractedTitle,
     createdAt: createdAt.toISOString(),
     canRetry: savedRecipeId === null && (status === "FAILED" || interrupted),
     savedRecipeId,
