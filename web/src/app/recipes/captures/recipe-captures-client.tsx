@@ -106,12 +106,12 @@ function PhotoPreview({ file }: { file: File }) {
   return <img alt="" className="size-16 shrink-0 rounded-lg object-cover" ref={setPreview} />;
 }
 
-export function RecipeCapturesClient() {
+export function RecipeCapturesClient({ initialCaptures }: { initialCaptures?: RecipeCaptureSummary[] }) {
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
   const [nextPhotoId, setNextPhotoId] = useState(0);
-  const [captures, setCaptures] = useState<RecipeCaptureSummary[]>();
+  const [captures, setCaptures] = useState(initialCaptures);
   const [refreshCount, setRefreshCount] = useState(0);
-  const [listError, setListError] = useState("");
+  const [listError, setListError] = useState(initialCaptures ? "" : "Could not load the photo inbox.");
   const [uploadError, setUploadError] = useState("");
   const [actionError, setActionError] = useState<{ id: string; message: string }>();
   const [busy, setBusy] = useState<string>();
@@ -122,7 +122,7 @@ export function RecipeCapturesClient() {
 
     const controller = new AbortController();
     let timer: number | undefined;
-    let hasActiveCaptures = false;
+    let hasActiveCaptures = initialCaptures?.some(isProcessing) ?? false;
 
     async function loadCaptures() {
       try {
@@ -140,12 +140,13 @@ export function RecipeCapturesClient() {
       }
     }
 
-    void loadCaptures();
+    if (refreshCount > 0) void loadCaptures();
+    else if (hasActiveCaptures) timer = window.setTimeout(loadCaptures, POLL_INTERVAL_MS);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [busy, refreshCount]);
+  }, [busy, initialCaptures, refreshCount]);
 
   useEffect(() => {
     function refreshOnReturn() {
@@ -205,6 +206,7 @@ export function RecipeCapturesClient() {
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : "Could not upload the photos.");
     } finally {
+      setRefreshCount((count) => count + 1);
       setBusy(undefined);
     }
   }
@@ -230,6 +232,7 @@ export function RecipeCapturesClient() {
     } catch (error) {
       setActionError({ id: capture.id, message: error instanceof Error ? error.message : fallback });
     } finally {
+      setRefreshCount((count) => count + 1);
       setBusy(undefined);
     }
   }
@@ -239,16 +242,16 @@ export function RecipeCapturesClient() {
 
   return (
     <div className="space-y-6">
-      <section className="app-theme-card space-y-4 p-4 sm:p-6" aria-labelledby="add-photos">
+      <section className="space-y-4 border-b border-[var(--divider)] pb-6" aria-labelledby="add-photos">
         <div>
           <h2 className="text-lg font-semibold" id="add-photos">Import a recipe from photos</h2>
           <p className="app-theme-muted mt-1 text-sm" id="photo-limits">
-            Use up to {MAX_RECIPE_PHOTOS} JPEG, PNG or WebP photos of one recipe. Each photo can be up to {MAX_RECIPE_PHOTO_BYTES / MB} MB, with a {MAX_RECIPE_PHOTOS_BYTES / MB} MB total limit.
+            Up to {MAX_RECIPE_PHOTOS} photos per recipe. JPEG, PNG or WebP, {MAX_RECIPE_PHOTO_BYTES / MB} MB each and {MAX_RECIPE_PHOTOS_BYTES / MB} MB total.
           </p>
         </div>
         <form className="space-y-4" onSubmit={upload}>
           <div className="flex flex-wrap gap-2">
-            <label className={pickerClassName}>
+            <label className={`capture-camera-picker ${pickerClassName}`}>
               <Camera aria-hidden="true" size={18} /> Take photo
               <input accept="image/*" aria-describedby="photo-limits" capture="environment" className="sr-only" disabled={inputDisabled} onChange={addPhotos} type="file" />
             </label>
@@ -297,12 +300,12 @@ export function RecipeCapturesClient() {
             <p className="text-sm text-red-700 dark:text-red-300" role="alert">{listError}</p>
             <button className="app-theme-secondary-button min-h-11 px-3 text-sm" disabled={Boolean(busy)} onClick={() => setRefreshCount(refreshCount + 1)} type="button">Refresh inbox</button>
           </div>
-        ) : captures === undefined ? <p className="app-theme-muted text-sm" role="status">Loading inbox...</p> : null}
+        ) : null}
         {captures?.length === 0 && !listError ? <p className="app-theme-muted text-sm">Your photo captures will appear here.</p> : null}
         {captures?.length ? (
           <ul className="space-y-3">
             {captures.map((capture) => (
-              <li className="app-theme-card space-y-3 p-4" key={capture.id}>
+              <li className="space-y-3 border-b border-[var(--divider)] pb-4" key={capture.id}>
                 <div>
                   <h3 className="break-words font-semibold">{capture.title || "Recipe photos"}</h3>
                   <p className="app-theme-muted text-sm">
