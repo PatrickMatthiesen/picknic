@@ -341,7 +341,7 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     );
   }
 
-  const [mealPlan, templates] = await Promise.all([
+  const [mealPlan, templates, cookLogs] = await Promise.all([
     prisma.mealPlan.findUnique({
       where: { householdId_weekStart: { householdId: membership.householdId, weekStart } },
       include: { entries: { orderBy: [{ date: "asc" }, { mealType: "asc" }], include: { recipe: true, recipeRevision: true } } },
@@ -349,11 +349,21 @@ export default async function PlannerPage({ searchParams }: PageProps) {
     prisma.mealPlanTemplate.findMany({
       where: { householdId: membership.householdId }, orderBy: { name: "asc" }, select: { id: true, name: true },
     }),
+    prisma.cookLog.findMany({
+      where: { householdId: membership.householdId, date: { gte: weekStart, lte: weekEnd } },
+      orderBy: [{ createdAt: "asc" }, { recipeId: "asc" }],
+      select: { date: true, recipeId: true, recipeRevision: { select: { snapshot: true } } },
+    }),
   ]);
   const entriesByDay = new Map<string, NonNullable<typeof mealPlan>["entries"]>();
   for (const entry of mealPlan?.entries ?? []) {
     const key = getDateKey(entry.date);
     entriesByDay.set(key, [...(entriesByDay.get(key) ?? []), entry]);
+  }
+  const cookLogsByDay = new Map<string, typeof cookLogs>();
+  for (const log of cookLogs) {
+    const key = getDateKey(log.date);
+    cookLogsByDay.set(key, [...(cookLogsByDay.get(key) ?? []), log]);
   }
   const previousWeek = getDateKey(addUtcDays(weekStart, -7));
   const nextWeek = getDateKey(addUtcDays(weekStart, 7));
@@ -414,6 +424,7 @@ export default async function PlannerPage({ searchParams }: PageProps) {
         {days.map((day) => {
           const dateKey = getDateKey(day);
           const entries = entriesByDay.get(dateKey) ?? [];
+          const cooked = cookLogsByDay.get(dateKey) ?? [];
           const dayName = day.toLocaleDateString("en", { weekday: "long", timeZone: "UTC" });
           const isSelected = Boolean(selectedDate && dateKey === selectedDayKey);
           return (
@@ -422,6 +433,13 @@ export default async function PlannerPage({ searchParams }: PageProps) {
                 <span>{day.toLocaleDateString("en", { weekday: "short", timeZone: "UTC" })}</span>
                 <strong>{day.getUTCDate()}</strong>
               </header>
+              {cooked.length > 0 && (
+                <ul className="planner-cooked">
+                  {cooked.map((log) => (
+                    <li key={log.recipeId}>{`Cooked: ${readRecipeSnapshot(log.recipeRevision.snapshot).title}`}</li>
+                  ))}
+                </ul>
+              )}
               {entries.length === 0 ? <p className="planner-empty-day">No meals planned</p> : (
                 <ul className="planner-entries">
                   {entries.map((entry) => {

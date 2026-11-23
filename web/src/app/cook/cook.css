@@ -158,7 +158,8 @@
 }
 
 .cooking-done,
-.cooking-finished button {
+.cooking-review,
+.cooking-log button {
   display: inline-flex;
   min-height: 48px;
   align-items: center;
@@ -169,8 +170,40 @@
   cursor: pointer;
 }
 
-.cooking-finished button {
+.cooking-review,
+.cooking-log {
   margin-top: 12px;
+}
+
+.cooking-log {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.cooking-log-status:empty {
+  position: absolute;
+}
+
+.cooking-log-status,
+.cooking-log-error {
+  font-size: .875rem;
+}
+
+.cooking-log-error {
+  color: var(--danger);
+}
+
+.cooking-log-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cooking-log-options button {
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .cooking-step-navigation {

@@ -2,15 +2,18 @@
 
 import { ArrowLeft, ArrowRight, BellRing, Check, ChevronDown, Clock3, Minus, Plus } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IngredientMeasurement, MeasurementPreferenceSelect, useMeasurementPreference } from "@/app/_components/ingredient-measurement";
 import { RecipeImage } from "@/app/_components/recipe-image";
 import { aggregateIngredients, groupIngredientsByComponent } from "@/lib/ingredients";
+import { getLocalDateKey } from "@/lib/meal-plan";
 import { formatMealType } from "@/lib/recipe-display";
 import type { RecipeSnapshotIngredient, RecipeSnapshotStep } from "@/lib/recipe-revisions";
 import { groupRecipeSteps } from "@/lib/recipe-steps";
 import { getUnitById, resolveUnambiguousUnit } from "@/lib/units";
 import { cookPlannerHref } from "./cook-links";
+import { CookLogClient } from "./cook-log-client";
 
 type Ingredient = Omit<RecipeSnapshotIngredient, "position">;
 type IngredientMode = "all" | "component";
@@ -51,20 +54,25 @@ function StepDetails({ step }: { step: Step }) {
 }
 
 export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe, recipeRevisionId, servingsOverride }: Props) {
+  const router = useRouter();
   const [servings, setServings] = useState(servingsOverride ?? recipe.servings);
   const [ingredientMode, setIngredientMode] = useState<IngredientMode>("all");
   const [checkedIngredients, setCheckedIngredients] = useState<Set<string>>(new Set());
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [loadedSession, setLoadedSession] = useState<string | null>(null);
+  const [browserDateKey, setBrowserDateKey] = useState<string | null>(null);
+  const [sessionDate, setSessionDate] = useState<string | null>(null);
   const [measurementPreference, setMeasurementPreference] = useMeasurementPreference();
   const ingredientsPanel = useRef<HTMLDetailsElement>(null);
   const stepHeading = useRef<HTMLHeadingElement>(null);
-  const sessionId = `${entryId}:${recipeRevisionId}`;
+  const standalone = mealType === "COOK NOW";
+  const recipeSessionId = `${entryId}:${recipeRevisionId}`;
+  const sessionId = standalone && sessionDate ? `${recipeSessionId}:${sessionDate}` : recipeSessionId;
   const progressKey = `picknic:cook-progress:${sessionId}`;
   const scrollKey = `picknic:cook-scroll:${sessionId}`;
   const stepKey = `picknic:cook-step:${sessionId}`;
-  const ingredientsKey = `picknic:cook-ingredients:${sessionId}`;
+  const ingredientsKey = `picknic:cook-ingredients:${recipeSessionId}`;
   const ingredientModeKey = `${ingredientsKey}:mode`;
   const multiplier = servings / Math.max(1, recipe.servings);
   const allIngredients = useMemo(() => {
@@ -90,9 +98,35 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
   const activeIndex = selectedIndex >= 0 ? selectedIndex : steps.findIndex((step) => !completedSteps.has(step.id));
   const activeStep = steps[activeIndex];
   const completedCount = steps.filter((step) => completedSteps.has(step.id)).length;
-  const plannerHref = cookPlannerHref(dateKey);
+  const plannerHref = cookPlannerHref(standalone ? browserDateKey ?? dateKey : dateKey);
 
   useLayoutEffect(() => {
+    if (!standalone) return;
+    let timer: ReturnType<typeof setTimeout>;
+
+    function refreshBrowserDate() {
+      const today = getLocalDateKey();
+      setBrowserDateKey(today);
+      setSessionDate((startedOn) => startedOn ?? today);
+      clearTimeout(timer);
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 0);
+      timer = setTimeout(refreshBrowserDate, Math.max(1, midnight.getTime() - Date.now()));
+    }
+
+    const frame = requestAnimationFrame(refreshBrowserDate);
+    window.addEventListener("focus", refreshBrowserDate);
+    document.addEventListener("visibilitychange", refreshBrowserDate);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      window.removeEventListener("focus", refreshBrowserDate);
+      document.removeEventListener("visibilitychange", refreshBrowserDate);
+    };
+  }, [standalone]);
+
+  useLayoutEffect(() => {
+    if (standalone && !sessionDate) return;
     const frame = requestAnimationFrame(() => {
       let savedSteps: string[] = [];
       try {
@@ -113,7 +147,7 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
     }
 
     return () => cancelAnimationFrame(frame);
-  }, [ingredientModeKey, ingredientsKey, progressKey, sessionId, stepKey]);
+  }, [ingredientModeKey, ingredientsKey, progressKey, sessionDate, sessionId, standalone, stepKey]);
 
   useLayoutEffect(() => {
     if (loadedSession !== sessionId) return;
@@ -177,10 +211,17 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
     <section className="cooking-session">
       <header className="cooking-header">
         <nav aria-label="Cooking navigation" className="cooking-links">
-          <Link className="cooking-back" href={mealType === "COOK NOW" ? `/recipes/${recipe.id}` : plannerHref}>
-            <ArrowLeft aria-hidden="true" size={17} /> {mealType === "COOK NOW" ? "Back to recipe" : "Back to meal plan"}
+          <Link className="cooking-back" href={standalone ? `/recipes/${recipe.id}` : plannerHref}>
+            <ArrowLeft aria-hidden="true" size={17} /> {standalone ? "Back to recipe" : "Back to meal plan"}
           </Link>
-          {mealType === "COOK NOW" && <Link className="cooking-back" href={plannerHref}>Meal plan</Link>}
+          {standalone && (
+            <Link className="cooking-back" href={plannerHref} onNavigate={(event) => {
+              const todayHref = cookPlannerHref(getLocalDateKey());
+              if (todayHref === plannerHref) return;
+              event.preventDefault();
+              router.push(todayHref);
+            }}>Meal plan</Link>
+          )}
         </nav>
         <div className="cooking-title">
           <div>
@@ -198,7 +239,7 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
             <span>{completedCount} of {steps.length} done</span>
           </div>
         )}
-        {activeStep ? (
+        {activeStep && (
           <>
             <div className="cooking-current-heading">
               <h2 id="cooking-step-title" ref={stepHeading} tabIndex={-1}>Step {activeIndex + 1} of {steps.length}</h2>
@@ -220,11 +261,15 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
               </div>
             </div>
           </>
-        ) : (
+        )}
+        {(!activeStep || (standalone && completedCount === steps.length)) && (
           <div className="cooking-finished">
-            <h2 id="cooking-step-title" ref={stepHeading} tabIndex={-1}>{steps.length > 0 ? "All steps done" : "No instructions yet"}</h2>
-            {steps.length > 0 && (
-              <button className="app-theme-secondary-button" onClick={() => showStep(steps[steps.length - 1].id)} type="button">Review last step</button>
+            {!activeStep && <h2 id="cooking-step-title" ref={stepHeading} tabIndex={-1}>{steps.length > 0 ? "All steps done" : "No instructions yet"}</h2>}
+            {standalone && browserDateKey && completedCount === steps.length && (
+              <CookLogClient key={browserDateKey} dateKey={browserDateKey} recipeId={recipe.id} recipeRevisionId={recipeRevisionId} />
+            )}
+            {!activeStep && steps.length > 0 && (
+              <button className="app-theme-secondary-button cooking-review" onClick={() => showStep(steps[steps.length - 1].id)} type="button">Review last step</button>
             )}
           </div>
         )}

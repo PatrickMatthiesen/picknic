@@ -93,6 +93,7 @@ model Household {
   pantryItems          PantryItem[]
   recipes              Recipe[]
   recipeCaptures       RecipeCapture[]
+  cookLogs             CookLog[]
   shoppingLists        ShoppingList[]
   invitationAttempts   HouseholdInvitationAttempt[]
   createdAt            DateTime          @default(now())
@@ -153,6 +154,7 @@ model Recipe {
   saves            SavedRecipe[]
   collectionItems  RecipeCollectionItem[]
   plannedIn        MealPlanEntry[]
+  cookLogs         CookLog[]
   listItems        ShoppingListItem[]
   capture          RecipeCapture?
   createdAt        DateTime               @default(now())
@@ -200,10 +202,25 @@ model RecipeRevision {
   recipe         Recipe          @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   publishedBy    User            @relation(fields: [publishedById], references: [id], onDelete: Restrict)
   plannedEntries MealPlanEntry[]
+  cookLogs       CookLog[]
   createdAt      DateTime        @default(now())
 
   @@unique([recipeId, version])
   @@index([recipeId, createdAt])
+}
+
+model CookLog {
+  householdId      String
+  date             DateTime       @db.Date
+  recipeId         String
+  recipeRevisionId String
+  createdAt        DateTime       @default(now())
+  swappedAt        DateTime?
+  household        Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  recipe           Recipe         @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeRevision   RecipeRevision @relation(fields: [recipeRevisionId], references: [id], onDelete: Cascade)
+
+  @@id([householdId, date, recipeId])
 }
 
 model RecipeIngredient {

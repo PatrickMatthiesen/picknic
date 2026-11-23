@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { Prisma } from "@prisma/client";
 import { isValidElement, type ReactNode } from "react";
 
@@ -8,6 +8,7 @@ const prisma = {
   $queryRaw: mock(async () => []),
   recipe: { findFirst: mock(), findMany: mock(), findUniqueOrThrow: mock() },
   recipeRevision: { findFirst: mock(), findUnique: mock(), findMany: mock(), create: mock() },
+  cookLog: { findMany: mock(), findUnique: mock() },
   mealPlan: { findUnique: mock(), upsert: mock() },
   mealPlanEntry: { create: mock(), findMany: mock(), updateMany: mock() },
   mealPlanTemplate: { findMany: mock() },
@@ -36,6 +37,7 @@ const { PATCH: updatePantry } = await import("../src/app/api/pantry/[pantryItemI
 const { generateShoppingListForWeek, getShoppingListForWeek } = await import("../src/lib/shopping-list-service");
 const { default: ShoppingListPage } = await import("../src/app/shopping-list/page");
 const { default: PlannerPage } = await import("../src/app/planner/page");
+const { getCookLogOptions } = await import("../src/app/cook/cook-log-options");
 const { default: CookPage } = await import("../src/app/cook/page");
 
 beforeEach(() => {
@@ -47,6 +49,7 @@ beforeEach(() => {
   revalidatePath.mockClear();
   prisma.mealPlan.upsert.mockResolvedValue({ id: "plan" });
   prisma.mealPlan.findUnique.mockResolvedValue(null);
+  prisma.cookLog.findMany.mockResolvedValue([]);
   prisma.shoppingList.create.mockResolvedValue({ id: "future-list" });
 });
 
@@ -300,6 +303,74 @@ function formAction(node: ReactNode, index: number) {
   const form = elements(node).filter((element) => element.type === "form")[index];
   return form.props.action as (data: FormData) => Promise<void>;
 }
+
+describe("cooking log reads", () => {
+  beforeEach(() => setSystemTime(new Date("2030-04-01T11:00:00Z")));
+  afterEach(() => setSystemTime());
+
+  test("planner shows the pinned cooked title on its day without a plan", async () => {
+    const date = new Date("2030-04-03");
+    prisma.mealPlanTemplate.findMany.mockResolvedValue([]);
+    prisma.cookLog.findMany.mockResolvedValue([
+      { date, recipeId: "soup", recipeRevision: { snapshot: { title: "Original soup" } } },
+    ]);
+
+    const page = await PlannerPage({ searchParams: Promise.resolve({ week: "2030-04-01" }) });
+    const days = elements(page).filter((element) => element.type === "article");
+    const loggedDays = days.filter((day) => elements(day.props.children as ReactNode)
+      .some((element) => element.type === "li" && element.props.children === "Cooked: Original soup"));
+    expect(loggedDays.map((day) => day.props["aria-label"])).toEqual(["Wednesday, Apr 3"]);
+    expect(prisma.cookLog.findMany.mock.calls[0][0].where).toEqual({
+      householdId: "reader-household", date: { gte: new Date("2030-04-01"), lte: new Date("2030-04-07") },
+    });
+  });
+
+  test("offers each same-type exchange and moves into empty slots", async () => {
+    const today = new Date("2030-04-01");
+    const wednesday = new Date("2030-04-03");
+    const dish = { recipeId: "soup", kind: "RECIPE" };
+    prisma.cookLog.findUnique.mockResolvedValue({ swappedAt: null });
+    prisma.mealPlan.findUnique.mockResolvedValue({ entries: [
+      { id: "today-soup", date: today, mealType: "BREAKFAST", ...dish },
+      { id: "today-recipe", date: today, mealType: "DINNER", kind: "RECIPE", recipeId: "rice",
+        recipe: { title: "Rice" }, recipeRevision: { snapshot: { title: "Lemon rice" } } },
+      { id: "today-note", date: today, mealType: "DINNER", kind: "NOTE", note: "Order pizza" },
+      { id: "planned-breakfast", date: wednesday, mealType: "BREAKFAST", ...dish },
+      { id: "planned-dinner", date: wednesday, mealType: "DINNER", ...dish },
+      { id: "planned-lunch", date: wednesday, mealType: "LUNCH", ...dish },
+    ] });
+
+    expect(await getCookLogOptions({ recipeId: "soup", dateKey: "2030-04-01" })).toEqual({ logged: true, options: [
+      { plannedEntryId: "planned-dinner", plannedDateKey: "2030-04-03", todayEntryId: "today-recipe",
+        label: "Swap Wednesday's dinner with Lemon rice today" },
+      { plannedEntryId: "planned-dinner", plannedDateKey: "2030-04-03", todayEntryId: "today-note",
+        label: "Swap Wednesday's dinner with Order pizza today" },
+      { plannedEntryId: "planned-lunch", plannedDateKey: "2030-04-03", todayEntryId: "",
+        label: "Move Wednesday's lunch to today" },
+    ] });
+    expect(prisma.mealPlan.findUnique.mock.calls[0][0].where).toEqual({
+      householdId_weekStart: { householdId: "reader-household", weekStart: today },
+    });
+  });
+
+  test("reports only log status before logging or after a swap", async () => {
+    const input = { recipeId: "soup", dateKey: "2030-04-01" };
+    prisma.cookLog.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ swappedAt: new Date() });
+    expect(await getCookLogOptions(input)).toEqual({ logged: false, options: [] });
+    expect(await getCookLogOptions(input)).toEqual({ logged: true, options: [] });
+    expect(prisma.mealPlan.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("bounds the local cooking date by UTC offsets and rejects invalid calendar dates", async () => {
+    prisma.cookLog.findUnique.mockResolvedValue(null);
+    await getCookLogOptions({ recipeId: "soup", dateKey: "2030-03-31" });
+    await getCookLogOptions({ recipeId: "soup", dateKey: "2030-04-02" });
+    await expect(getCookLogOptions({ recipeId: "soup", dateKey: "2030-04-03" })).rejects.toThrow("valid date");
+    setSystemTime(new Date("2030-03-02T11:00:00Z"));
+    await expect(getCookLogOptions({ recipeId: "soup", dateKey: "2030-02-30" })).rejects.toThrow("valid date");
+    expect(prisma.cookLog.findUnique).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("selected shopping week", () => {
   beforeEach(() => {

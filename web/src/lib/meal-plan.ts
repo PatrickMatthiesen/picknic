@@ -35,6 +35,24 @@ export function getDateKey(date: Date): string {
   return toUtcDate(date).toISOString().slice(0, 10);
 }
 
+export function getLocalDateKey() {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${today.getFullYear()}-${month}-${day}`;
+}
+
+export function parseTodayDateKey(value: string, now = Date.now()): Date | null {
+  const date = parseDateKey(value);
+  if (!date || getDateKey(date) !== value) return null;
+
+  // The browser sends its local calendar date. UTC-12 and UTC+14 bound it.
+  const hour = 60 * 60 * 1000;
+  const earliest = toUtcDate(new Date(now - 12 * hour));
+  const latest = toUtcDate(new Date(now + 14 * hour));
+  return date >= earliest && date <= latest ? date : null;
+}
+
 export const MAX_PLANNED_SERVINGS = 100;
 
 export function parsePlannedServings(value: unknown): number | null {
