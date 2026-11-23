@@ -265,7 +265,9 @@ export function CookSessionClient({ dateKey, entryId, imageUrl, mealType, recipe
         {(!activeStep || (standalone && completedCount === steps.length)) && (
           <div className="cooking-finished">
             {!activeStep && <h2 id="cooking-step-title" ref={stepHeading} tabIndex={-1}>{steps.length > 0 ? "All steps done" : "No instructions yet"}</h2>}
-            {standalone && completedCount === steps.length && <CookLogClient recipeId={recipe.id} recipeRevisionId={recipeRevisionId} />}
+            {standalone && browserDateKey && completedCount === steps.length && (
+              <CookLogClient key={browserDateKey} dateKey={browserDateKey} recipeId={recipe.id} recipeRevisionId={recipeRevisionId} />
+            )}
             {!activeStep && steps.length > 0 && (
               <button className="app-theme-secondary-button cooking-review" onClick={() => showStep(steps[steps.length - 1].id)} type="button">Review last step</button>
             )}

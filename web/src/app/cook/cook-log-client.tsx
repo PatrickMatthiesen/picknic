@@ -30,17 +30,17 @@ async function readCookLog(recipeId: string, dateKey: string, logged = false): P
   }
 }
 
-export function CookLogClient({ recipeId, recipeRevisionId }: { recipeId: string; recipeRevisionId: string }) {
+export function CookLogClient({ dateKey, recipeId, recipeRevisionId }: { dateKey: string; recipeId: string; recipeRevisionId: string }) {
   const [state, setState] = useState<CookLogState | null>(null);
   const busy = useRef(false);
 
   useEffect(() => {
     let active = true;
-    void readCookLog(recipeId, getLocalDateKey()).then((result) => {
+    void readCookLog(recipeId, dateKey).then((result) => {
       if (active) setState(result);
     });
     return () => { active = false; };
-  }, [recipeId]);
+  }, [dateKey, recipeId]);
 
   async function run(action: "refresh" | "log" | SwapOption) {
     if (!state || busy.current) return;
