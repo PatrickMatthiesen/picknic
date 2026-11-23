@@ -35,6 +35,7 @@
 .planner-days .add-meal-menu { margin-top: auto; }
 .planner-days .add-meal-menu > summary { font-size: .82rem; }
 .planner-empty-day { margin: 8px 0 14px; color: var(--muted); font-size: .82rem; }
+.planner-cooked { display: grid; gap: 4px; margin: 0 0 8px; padding: 0; list-style: none; color: var(--muted); font-size: .82rem; overflow-wrap: anywhere; }
 .planner-entries { margin: 0; padding: 0; list-style: none; }
 .planner-entry + .planner-entry { border-top: 1px solid var(--divider); padding-top: 10px; }
 .planner-entry-label, .planner-entry-meta { color: var(--muted); font-size: .72rem; }

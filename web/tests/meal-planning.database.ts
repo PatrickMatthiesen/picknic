@@ -17,6 +17,7 @@ mock.module("@/lib/auth-context", () => ({
   requireAppAuthContext: async () => ({ userId: readerId }),
   resolveActiveMembership: async () => ({ householdId: readerHouseholdId, role: "OWNER" }),
 }));
+mock.module("next/cache", () => ({ revalidatePath: () => {} }));
 const { POST: planMeals } = await import("../src/app/api/meal-plans/route");
 const { POST: saveRecipe } = await import("../src/app/api/recipes/route");
 const { GET: listCaptures } = await import("../src/app/api/recipes/captures/route");
@@ -25,6 +26,8 @@ const { GET: getCapturePhoto } = await import("../src/app/api/recipes/captures/[
 const { createRecipeRevision } = await import("../src/lib/recipe-revisions");
 const { generateShoppingListForWeek, getShoppingListForWeek } = await import("../src/lib/shopping-list-service");
 const { loadRecipeSearchPage } = await import("../src/lib/recipe-search-service");
+const { logCookedToday, swapCookedMeal } = await import("../src/app/cook/cook-log-actions");
+const { addUtcDays, getDateKey, getWeekStartUtc, toUtcDate } = await import("../src/lib/meal-plan");
 
 beforeAll(async () => {
   for (const label of ["reader", "author"]) {
@@ -62,6 +65,71 @@ function planMany(recipeIds: string[], weekStart = "2030-04-01", date = "2030-04
 const selectedWeek = new Date("2030-04-01");
 const generate = () => generateShoppingListForWeek({ householdId: readerHouseholdId, userId: readerId, weekStart: selectedWeek });
 const readList = () => getShoppingListForWeek(readerHouseholdId, selectedWeek);
+
+test("a standalone cook logs once and atomically swaps the selected entries' dates", async () => {
+  const today = toUtcDate(new Date());
+  const weekStart = getWeekStartUtc(today);
+  const plannedDate = addUtcDays(today, today.getUTCDay() === 0 ? -1 : 1);
+  const recipe = await prisma.recipe.create({ data: { householdId: readerHouseholdId, createdById: readerId, title: "Cooked soup" } });
+  const revision = await createRecipeRevision(prisma, recipe.id, readerId);
+  const plan = await prisma.mealPlan.create({ data: { householdId: readerHouseholdId, createdById: readerId, weekStart } });
+  const otherPlan = await prisma.mealPlan.create({ data: { householdId: authorHouseholdId, createdById: authorId, weekStart } });
+  const [planned, selected, unselected, foreign] = await Promise.all([
+    prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: plannedDate, mealType: "DINNER", recipeId: recipe.id, recipeRevisionId: revision.id, servingsOverride: 5 } }),
+    prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: today, mealType: "DINNER", kind: "NOTE", note: "Dinner at home" } }),
+    prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: today, mealType: "DINNER", kind: "LEFTOVERS" } }),
+    prisma.mealPlanEntry.create({ data: { mealPlanId: otherPlan.id, date: today, mealType: "DINNER", kind: "NOTE" } }),
+  ]);
+  const logInput = { recipeId: recipe.id, recipeRevisionId: recipe.id, dateKey: getDateKey(today) };
+  const swapInput = { ...logInput, plannedEntryId: planned.id, plannedDateKey: getDateKey(plannedDate), todayEntryId: selected.id };
+  await expect(swapCookedMeal(swapInput)).rejects.toThrow("Log the cooked meal");
+  await expect(logCookedToday({ ...logInput, dateKey: getDateKey(addUtcDays(today, -2)) })).rejects.toThrow("today's date");
+
+  await Promise.all([logCookedToday(logInput), logCookedToday(logInput)]);
+  const cookLogs = await prisma.cookLog.findMany({ where: { householdId: readerHouseholdId, date: today, recipeId: recipe.id }, include: { recipeRevision: true } });
+  expect(cookLogs).toHaveLength(1);
+  expect(cookLogs[0]?.recipeRevision).toMatchObject({ recipeId: recipe.id, version: 2 });
+  expect(await prisma.recipeRevision.count({ where: { recipeId: recipe.id } })).toBe(2);
+
+  await expect(swapCookedMeal({ ...swapInput, plannedDateKey: logInput.dateKey })).rejects.toThrow("planned meal changed");
+  await expect(swapCookedMeal({ ...swapInput, todayEntryId: foreign.id })).rejects.toThrow("Today's meal plan changed");
+  await expect(swapCookedMeal({ ...swapInput, todayEntryId: "" })).rejects.toThrow("Today's meal plan changed");
+  const duplicate = await prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: today, mealType: "DINNER", recipeId: recipe.id, recipeRevisionId: revision.id } });
+  await expect(swapCookedMeal(swapInput)).rejects.toThrow("already planned");
+  await prisma.mealPlanEntry.delete({ where: { id: duplicate.id } });
+
+  const swaps = await Promise.allSettled([swapCookedMeal(swapInput), swapCookedMeal(swapInput)]);
+  expect(swaps.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+  const entries = await prisma.mealPlanEntry.findMany({ where: { mealPlanId: plan.id } });
+  expect(entries.find((entry) => entry.id === planned.id)).toMatchObject({ date: today, recipeId: recipe.id, recipeRevisionId: revision.id, servingsOverride: 5 });
+  expect(entries.find((entry) => entry.id === selected.id)).toMatchObject({ date: plannedDate, note: "Dinner at home" });
+  expect(entries.find((entry) => entry.id === unselected.id)?.date).toEqual(today);
+  await expect(swapCookedMeal(swapInput)).rejects.toThrow("already moved");
+
+  const breakfast = await prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: plannedDate, mealType: "BREAKFAST", recipeId: recipe.id, recipeRevisionId: revision.id } });
+  await expect(swapCookedMeal({ ...swapInput, plannedEntryId: breakfast.id, todayEntryId: "" })).rejects.toThrow("already moved");
+}, 20_000);
+
+test("cook logs verify shared revisions and can move a recipe into an empty meal slot", async () => {
+  const today = toUtcDate(new Date());
+  const weekStart = getWeekStartUtc(today);
+  const plannedDate = addUtcDays(today, today.getUTCDay() === 0 ? -1 : 1);
+  const recipe = await prisma.recipe.create({ data: { householdId: authorHouseholdId, createdById: authorId, title: "Shared tart", visibility: "PUBLIC" } });
+  const published = await createRecipeRevision(prisma, recipe.id, authorId);
+  await prisma.recipe.update({ where: { id: recipe.id }, data: { visibility: "PRIVATE" } });
+  const privateRevision = await createRecipeRevision(prisma, recipe.id, authorId);
+  const plan = await prisma.mealPlan.upsert({
+    where: { householdId_weekStart: { householdId: readerHouseholdId, weekStart } },
+    create: { householdId: readerHouseholdId, createdById: readerId, weekStart },
+    update: {},
+  });
+  const entry = await prisma.mealPlanEntry.create({ data: { mealPlanId: plan.id, date: plannedDate, mealType: "LUNCH", recipeId: recipe.id, recipeRevisionId: published.id } });
+  const input = { recipeId: recipe.id, recipeRevisionId: published.id, dateKey: getDateKey(today) };
+  await expect(logCookedToday({ ...input, recipeRevisionId: privateRevision.id })).rejects.toThrow("recipe revision is not available");
+  await logCookedToday(input);
+  await swapCookedMeal({ ...input, plannedEntryId: entry.id, plannedDateKey: getDateKey(plannedDate), todayEntryId: "" });
+  expect(await prisma.mealPlanEntry.findUnique({ where: { id: entry.id } })).toMatchObject({ date: today, recipeRevisionId: published.id });
+});
 
 test("recipe captures scope photos to the uploader's active household and save only once", async () => {
   const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
